@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+.env.*
+*.sqlite3
+*.sqlite3-*
+*.lock
+
+# Kullanıcı verileri ve indirilen modeller
+veriler/
+modeller/
+
+# Yerel çalışma dosyaları (yayınlanmaz)
+hafiza/
+versiyon/
+AGENTS.md
+CLAUDE.md
