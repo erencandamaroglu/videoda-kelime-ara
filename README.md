@@ -1,6 +1,8 @@
 # Videoda Kelime Ara
 
-Klasörlerdeki videoların konuşmasından altyazı çıkarır (faster-whisper), SQLite'a kaydeder ve tüm arşivde kelime araması yapar.
+Türkçe | [English](README.en.md)
+
+Klasörlerdeki videoların konuşmasından altyazı çıkarır (faster-whisper), SQLite'a kaydeder ve tüm arşivde kelime araması yapar. Arayüz Türkçe ve İngilizce kullanılabilir (Ayarlar → Arayüz dili; değişince program yeniden açılır, ilk açılışta Windows diline göre seçilir).
 
 ## Kurulum ve çalıştırma
 

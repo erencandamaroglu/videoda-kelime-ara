@@ -9,6 +9,7 @@ from PyQt6.QtGui import QColor, QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
                              QPushButton, QSlider, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
+from .ceviri import _t, ondalik
 from .veritabani import sadelestir, srt_aktar, zaman_damgasi
 
 QMediaPlayer = None  # DetayPenceresi ilk açıldığında yüklenir (aşağıya bakın)
@@ -60,7 +61,7 @@ def okunur_boyut(boyut):
         return ''
     for birim in ('B', 'KB', 'MB', 'GB', 'TB'):
         if boyut < 1024 or birim == 'TB':
-            return f'{boyut:.0f} {birim}' if birim == 'B' else f'{boyut:.1f} {birim}'.replace('.', ',')
+            return f'{boyut:.0f} {birim}' if birim == 'B' else f'{ondalik(boyut)} {birim}'
         boyut /= 1024
 
 
@@ -75,7 +76,7 @@ class DetayPenceresi(QDialog):
         from PyQt6.QtMultimediaWidgets import QVideoWidget
         super().__init__(ust)
         self.yol, self.satirlar = yol, satirlar
-        self.setWindowTitle(f'Detay • {Path(yol).name}')
+        self.setWindowTitle(_t('Detay • {ad}', ad=Path(yol).name))
         self.resize(1300, 760)
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         duzen = QVBoxLayout(self)
@@ -99,7 +100,7 @@ class DetayPenceresi(QDialog):
         self.altyazi.setStyleSheet('font-size:15px;padding:4px')
         oynatici_duzeni.addWidget(self.altyazi)
         kontroller = QHBoxLayout()
-        self.oynat_dugmesi = QPushButton('Oynat')
+        self.oynat_dugmesi = QPushButton(_t('Oynat'))
         self.oynat_dugmesi.clicked.connect(self.oynat_duraklat)
         kontroller.addWidget(self.oynat_dugmesi)
         self.kaydirici = QSlider(Qt.Orientation.Horizontal)
@@ -111,7 +112,7 @@ class DetayPenceresi(QDialog):
         bolucu.addWidget(oynatici_kutusu)
 
         self.tablo = QTableWidget(len(satirlar), 3)
-        self.tablo.setHorizontalHeaderLabels(['Başlangıç', 'Bitiş', 'Altyazı'])
+        self.tablo.setHorizontalHeaderLabels([_t('Başlangıç'), _t('Bitiş'), _t('Altyazı')])
         self.tablo.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tablo.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.tablo.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -139,24 +140,25 @@ class DetayPenceresi(QDialog):
         duzen.addWidget(bolucu, 1)
 
         bilgi = QHBoxLayout()
-        self.takip = QCheckBox('Oynatırken altyazıyı takip et')
+        self.takip = QCheckBox(_t('Oynatırken altyazıyı takip et'))
         self.takip.setChecked(True)
         bilgi.addWidget(self.takip)
         bilgi.addStretch()
-        bilgi.addWidget(QLabel(f'{len(satirlar)} satır' + (f' • {self.eslesen} satırda aranan kelime var (sarı)' if kelimeler else '')
-                               + ' • Satıra tıklayın: video o saniyeden oynar.'))
+        bilgi.addWidget(QLabel(_t('{sayi} satır', sayi=len(satirlar))
+                               + (_t(' • {sayi} satırda aranan kelime var (sarı)', sayi=self.eslesen) if kelimeler else '')
+                               + _t(' • Satıra tıklayın: video o saniyeden oynar.')))
         duzen.addLayout(bilgi)
 
         dugmeler = QHBoxLayout()
         self.vlc = vlc_bul()
-        vlc_dugmesi = QPushButton("VLC'de bu saniyeden aç")
+        vlc_dugmesi = QPushButton(_t("VLC'de bu saniyeden aç"))
         vlc_dugmesi.setEnabled(bool(self.vlc))
-        vlc_dugmesi.setToolTip(self.vlc or 'VLC bulunamadı. https://www.videolan.org adresinden kurulabilir.')
+        vlc_dugmesi.setToolTip(self.vlc or _t('VLC bulunamadı. https://www.videolan.org adresinden kurulabilir.'))
         vlc_dugmesi.clicked.connect(self.vlc_ac)
         dugmeler.addWidget(vlc_dugmesi)
         for etiket, islev in [('Varsayılan oynatıcıda aç', self.varsayilanda_ac), ('Klasörünü aç', self.klasoru_ac),
                               ('Metni kopyala', self.metni_kopyala), ('SRT kaydet', self.srt_kaydet), ('Kapat', self.close)]:
-            dugme = QPushButton(etiket)
+            dugme = QPushButton(_t(etiket))
             dugme.clicked.connect(islev)
             dugmeler.addWidget(dugme)
         duzen.addLayout(dugmeler)
@@ -217,7 +219,7 @@ class DetayPenceresi(QDialog):
             self.oynatici.play()
 
     def oynatma_durumu_degisti(self, durum):
-        self.oynat_dugmesi.setText('Duraklat' if durum == QMediaPlayer.PlaybackState.PlayingState else 'Oynat')
+        self.oynat_dugmesi.setText(_t('Duraklat') if durum == QMediaPlayer.PlaybackState.PlayingState else _t('Oynat'))
 
     def sure_degisti(self, sure):
         self.kaydirici.setRange(0, sure)
@@ -236,18 +238,18 @@ class DetayPenceresi(QDialog):
             self.tablo.scrollToItem(self.tablo.item(satir, 0), QTableWidget.ScrollHint.EnsureVisible)
 
     def medya_hatasi(self, _hata, mesaj):
-        self.altyazi.setText(f'Video burada oynatılamadı: {mesaj}\n'
-                             "VLC veya varsayılan oynatıcı düğmesini kullanın.")
+        self.altyazi.setText(_t('Video burada oynatılamadı: {mesaj}\nVLC veya varsayılan oynatıcı düğmesini kullanın.',
+                                mesaj=mesaj))
 
     def vlc_ac(self):
         self.oynatici.pause()
         if not QProcess.startDetached(self.vlc, [f'--start-time={self.gecerli_saniye():.2f}', self.yol]):
-            QMessageBox.warning(self, 'VLC açılamadı', self.vlc)
+            QMessageBox.warning(self, _t('VLC açılamadı'), self.vlc)
 
     def varsayilanda_ac(self):
         self.oynatici.pause()
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(self.yol)):
-            QMessageBox.warning(self, 'Video açılamadı', 'Dosya yolunu ve varsayılan oynatıcınızı kontrol edin.')
+            QMessageBox.warning(self, _t('Video açılamadı'), _t('Dosya yolunu ve varsayılan oynatıcınızı kontrol edin.'))
 
     def klasoru_ac(self):
         gezginde_goster(self.yol)
@@ -256,12 +258,13 @@ class DetayPenceresi(QDialog):
         QGuiApplication.clipboard().setText('\n'.join(metin for _, _, metin in self.satirlar))
 
     def srt_kaydet(self):
-        hedef, _ = QFileDialog.getSaveFileName(self, 'SRT kaydet', str(Path(self.yol).with_suffix('.srt')), 'Altyazı (*.srt)')
+        hedef, _filtre = QFileDialog.getSaveFileName(self, _t('SRT kaydet'), str(Path(self.yol).with_suffix('.srt')),
+                                                     _t('Altyazı (*.srt)'))
         if hedef:
             try:
                 srt_aktar(self.satirlar, hedef)
             except Exception as hata:
-                QMessageBox.warning(self, 'Dışa aktarma hatası', str(hata))
+                QMessageBox.warning(self, _t('Dışa aktarma hatası'), str(hata))
 
     def done(self, sonuc):
         self.oynatici.stop()

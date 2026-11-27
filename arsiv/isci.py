@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from .ceviri import _t
 from .konusma import model_yukle
 from .medya_bilgisi import dosya_md5, incele
 from .sure_filtresi import SureFiltresi
@@ -94,21 +95,21 @@ def tasinanlari_bul(kayiplar, yeni_dosyalar, durdu=lambda: False):
         ad = os.path.normcase(os.path.basename(kayit['path']))
         ayni_boyut = [y for y in boyuta_gore.get(kayit['size'], ()) if y not in kullanilan]
         if kayit['md5']:
-            kesin, neden = [y for y in ayni_boyut if md5_degeri(y) == kayit['md5']], 'MD5 aynı'
+            kesin, neden = [y for y in ayni_boyut if md5_degeri(y) == kayit['md5']], _t('MD5 aynı')
         else:
             kesin = [y for y in ayni_boyut if degismemis((kayit['size'], kayit['mtime']), y, yeni_dosyalar[y])]
-            neden = 'Boyut ve tarih aynı'
+            neden = _t('Boyut ve tarih aynı')
         ayni_adli = [y for y in kesin if os.path.normcase(os.path.basename(y)) == ad]
         secim = ayni_adli if len(ayni_adli) == 1 else kesin
         if len(secim) == 1:
             sonuc[kayit['id']] = (secim[0], neden, True)
             kullanilan.add(secim[0])
         elif kesin:
-            sonuc[kayit['id']] = (kesin[0], f'{len(kesin)} kopya var; biri seçildi', False)
+            sonuc[kayit['id']] = (kesin[0], _t('{sayi} kopya var; biri seçildi', sayi=len(kesin)), False)
         elif ayni_boyut and not kayit['md5']:
-            sonuc[kayit['id']] = (ayni_boyut[0], 'Yalnızca boyut aynı', False)
+            sonuc[kayit['id']] = (ayni_boyut[0], _t('Yalnızca boyut aynı'), False)
         elif len(ada_gore.get(ad, ())) == 1 and ada_gore[ad][0] not in kullanilan:
-            sonuc[kayit['id']] = (ada_gore[ad][0], 'Yalnızca ad aynı', False)
+            sonuc[kayit['id']] = (ada_gore[ad][0], _t('Yalnızca ad aynı'), False)
     return sonuc
 
 
@@ -137,7 +138,8 @@ class BagIscisi(QThread):
             if kokler is None:
                 kokler = [s['path'] for s in db.execute('SELECT path FROM scan_roots')] + self.klasorler
             kokler = ayri_kokler([k for k in kokler if os.path.isdir(k)])
-            self.asama.emit(f'{len(kayiplar)} kopuk kayıt bulundu; yeni yerleri aranıyor (klasör taraması birkaç dakika sürebilir)...')
+            self.asama.emit(_t('{sayi} kopuk kayıt bulundu; yeni yerleri aranıyor (klasör taraması birkaç dakika sürebilir)...',
+                               sayi=len(kayiplar)))
             self.ilerleme.emit(0, 0)
             dosyalar, _ = videolari_bul(kokler, self.isInterruptionRequested, lambda _: None)
             if self.isInterruptionRequested():
@@ -154,7 +156,7 @@ class BagIscisi(QThread):
                 db.close()
 
     def kayiplari_bul(self, kayitlar):
-        self.asama.emit(f'{len(kayitlar)} kaydın dosyası kontrol ediliyor...')
+        self.asama.emit(_t('{sayi} kaydın dosyası kontrol ediliyor...', sayi=len(kayitlar)))
         kayiplar = []
         with ThreadPoolExecutor(16) as havuz:
             for i, (kayit, var) in enumerate(zip(kayitlar, havuz.map(os.path.exists, [k['path'] for k in kayitlar])), 1):
@@ -206,18 +208,18 @@ class TaramaIscisi(QThread):
                 db = baglan()
                 bekleyen = sorted(self.yollar)
                 atlanan = 0
-                self.gunluk.emit(f'{len(bekleyen)} video yeniden işlenecek.')
+                self.gunluk.emit(_t('{sayi} video yeniden işlenecek.', sayi=len(bekleyen)))
             else:
                 kokler = []
                 for kok in self.kokler:
                     if Path(kok).is_dir():
                         kokler.append(kok)
                     else:
-                        self.gunluk.emit(f'Klasör bulunamadı: {kok}')
+                        self.gunluk.emit(_t('Klasör bulunamadı: {kok}', kok=kok))
                 self.asama.emit('Klasörler taranıyor', -1)
                 dosyalar, okunamayan = videolari_bul(ayri_kokler(kokler), self.durmali, self.gunluk.emit)
                 if self.durmali():
-                    self.sonuc.emit('Tarama durduruldu.')
+                    self.sonuc.emit(_t('Tarama durduruldu.'))
                     return
                 db = baglan()
                 kokleri_ekle(db, kokler)
@@ -225,8 +227,9 @@ class TaramaIscisi(QThread):
                 bilinen = {os.path.normcase(k['path']): k for k in db.execute('SELECT * FROM videos')}
                 bekleyen = [d for d in sorted(dosyalar) if not self.guncel_mi(bilinen.get(os.path.normcase(d)), d, dosyalar[d])]
                 atlanan = len(dosyalar) - len(bekleyen)
-                self.gunluk.emit(f'{len(dosyalar)} video bulundu: {atlanan} önceden işlenmiş, {len(bekleyen)} işlenecek.')
-            self.gunluk.emit(f'Süre filtresi: {self.sure_filtresi.aciklama()}')
+                self.gunluk.emit(_t('{bulunan} video bulundu: {atlanan} önceden işlenmiş, {bekleyen} işlenecek.',
+                                    bulunan=len(dosyalar), atlanan=atlanan, bekleyen=len(bekleyen)))
+            self.gunluk.emit(_t('Süre filtresi: {aciklama}', aciklama=self.sure_filtresi.aciklama()))
             bilinen = {os.path.normcase(k['path']): k for k in db.execute('SELECT path,size,duration FROM videos')}
             okunan = self.sureleri_oku(bekleyen, bilinen)
             ogeler = [self.kuyruk_ogesi(y, dosyalar, bilinen, okunan) for y in bekleyen]
@@ -235,19 +238,20 @@ class TaramaIscisi(QThread):
             tamamlanan = bilgi_hatasi = 0
             if self.bilgi_tamamla and not self.durmali():
                 tamamlanan, bilgi_hatasi = self.eksik_bilgileri_tamamla(db, dosyalar)
-            onek = 'Durduruldu' if self.durmali() else 'Tamamlandı'
-            ozet = f'{onek}: {islenen} işlendi, {atlanan} önceden işlenmiş, {sure_disi} süre dışı, {hatali} hata'
+            onek = _t('Durduruldu') if self.durmali() else _t('Tamamlandı')
+            ozet = _t('{onek}: {islenen} işlendi, {atlanan} önceden işlenmiş, {sure_disi} süre dışı, {hatali} hata',
+                      onek=onek, islenen=islenen, atlanan=atlanan, sure_disi=sure_disi, hatali=hatali)
             if baglanan:
-                ozet += f', {baglanan} bağ düzeltildi'
+                ozet += _t(', {sayi} bağ düzeltildi', sayi=baglanan)
             if kopuk:
-                ozet += f', {kopuk} kopuk kayıt (Video listesi > Kopuk bağları kontrol et)'
+                ozet += _t(', {sayi} kopuk kayıt (Video listesi > Kopuk bağları kontrol et)', sayi=kopuk)
             if tamamlanan or bilgi_hatasi:
-                ozet += f', {tamamlanan} videonun bilgisi tamamlandı'
+                ozet += _t(', {sayi} videonun bilgisi tamamlandı', sayi=tamamlanan)
             if bilgi_hatasi:
-                ozet += f', {bilgi_hatasi} bilgi okunamadı'
+                ozet += _t(', {sayi} bilgi okunamadı', sayi=bilgi_hatasi)
             self.sonuc.emit(ozet + '.')
         except Exception as hata:
-            self.sonuc.emit(f'İşlem başarısız: {hata}')
+            self.sonuc.emit(_t('İşlem başarısız: {hata}', hata=hata))
         finally:
             if db is not None:
                 db.close()
@@ -309,9 +313,9 @@ class TaramaIscisi(QThread):
             if kesin:
                 yolu_guncelle(db, kayit['id'], yol, os.stat(yol))
                 baglanan += 1
-                self.gunluk.emit(f'Bağ düzeltildi: {kayit["path"]} -> {yol}')
+                self.gunluk.emit(_t('Bağ düzeltildi: {eski} -> {yeni}', eski=kayit['path'], yeni=yol))
             else:
-                self.gunluk.emit(f'Kopuk kayıt (dosya bulunamadı): {kayit["path"]}')
+                self.gunluk.emit(_t('Kopuk kayıt (dosya bulunamadı): {yol}', yol=kayit['path']))
         return baglanan, len(kayiplar) - baglanan
 
     def altyazi_olustur(self, db, bekleyen, okunan, sureler):
@@ -337,20 +341,20 @@ class TaramaIscisi(QThread):
                     ayrinti = dict(okunan[dosya_adi]) if dosya_adi in okunan else incele(yol)
                 except Exception as hata:
                     ayrinti = {}
-                    self.gunluk.emit(f'Video bilgileri okunamadı: {yol.name} ({hata})')
+                    self.gunluk.emit(_t('Video bilgileri okunamadı: {ad} ({hata})', ad=yol.name, hata=hata))
                 self.oge_ayrintisi.emit(durum.st_size, ayrinti.get('duration'))
                 if filtreli:
                     if ayrinti.get('duration') is None:
-                        raise ValueError('Video süresi okunamadı; süre filtresi açık olduğu için işlenmedi.')
+                        raise ValueError(_t('Video süresi okunamadı; süre filtresi açık olduğu için işlenmedi.'))
                     if not self.sure_filtresi.kabul_eder(ayrinti['duration']):
                         sure_disi += 1
                         durum_metni = 'Süre dışı'
-                        self.gunluk.emit(f'Süre nedeniyle atlandı: {yol.name} ({ayrinti["duration"] / 60:.2f} dk)')
+                        self.gunluk.emit(_t('Süre nedeniyle atlandı: {ad} ({dk} dk)', ad=yol.name, dk=f'{ayrinti["duration"] / 60:.2f}'))
                         continue
                 if model is None:
-                    self.gunluk.emit('Konuşma modeli yükleniyor; ilk kullanımda internetten indirilir...')
+                    self.gunluk.emit(_t('Konuşma modeli yükleniyor; ilk kullanımda internetten indirilir...'))
                     model = model_yukle(self.model_adi, self.birim, self.gunluk.emit)
-                self.gunluk.emit(f'[{i}/{toplam}] İşleniyor: {dosya_adi}')
+                self.gunluk.emit(_t('[{i}/{toplam}] İşleniyor: {dosya}', i=i, toplam=toplam, dosya=dosya_adi))
                 akis, bilgi = model.transcribe(dosya_adi, language=None if self.dil == 'auto' else self.dil,
                                                vad_filter=True, beam_size=5)
                 satirlar = []
@@ -363,7 +367,7 @@ class TaramaIscisi(QThread):
                         self.oge_ilerlemesi.emit(min(99, int(parca.end * 100 / bilgi.duration)))
                     self.icerik_ilerlemesi.emit(icerik_biten + min(parca.end, sureler.get(dosya_adi, 0)), icerik_toplami)
                     if parca.end - son_bildirim >= 30:
-                        self.gunluk.emit(f'  {yol.name}: {parca.end:.0f} / {bilgi.duration:.0f} saniye')
+                        self.gunluk.emit(_t('  {ad}: {sn} / {toplam} saniye', ad=yol.name, sn=f'{parca.end:.0f}', toplam=f'{bilgi.duration:.0f}'))
                         son_bildirim = parca.end
                 if self.isInterruptionRequested():
                     break
@@ -372,15 +376,15 @@ class TaramaIscisi(QThread):
                     break
                 sonra = yol.stat()
                 if (sonra.st_size, sonra.st_mtime_ns) != (durum.st_size, durum.st_mtime_ns):
-                    raise RuntimeError('Video işlem sırasında değişti; yeniden tarayın.')
+                    raise RuntimeError(_t('Video işlem sırasında değişti; yeniden tarayın.'))
                 altyaziyi_kaydet(db, yol, durum, self.model_adi, self.dil, satirlar, ayrinti)
                 islenen += 1
                 durum_metni = 'Tamamlandı'
-                self.gunluk.emit(f'Kaydedildi: {yol.name} ({len(satirlar)} altyazı satırı)')
+                self.gunluk.emit(_t('Kaydedildi: {ad} ({sayi} altyazı satırı)', ad=yol.name, sayi=len(satirlar)))
             except Exception as hata:
                 hatali += 1
                 durum_metni, not_ = 'Hata', str(hata)
-                self.gunluk.emit(f'HATA — {dosya_adi}: {hata}')
+                self.gunluk.emit(_t('HATA — {dosya}: {hata}', dosya=dosya_adi, hata=hata))
             finally:
                 self.oge_bitti.emit(durum_metni, not_)
                 self.ilerleme.emit(i, toplam)
@@ -410,7 +414,7 @@ class TaramaIscisi(QThread):
                                         ('MD5 hesaplanıyor', True, [k for k in kayitlar if k['md5'] is None])):
             if self.durmali():
                 break
-            self.gunluk.emit(f'{ad}: {len(yapilacak)} video.')
+            self.gunluk.emit(_t('{ad}: {sayi} video.', ad=_t(ad), sayi=len(yapilacak)))
             self.asama.emit(ad, len(yapilacak))
             if md5_turu:
                 self.ogeler_kuyrukta.emit([(k['path'], k['size'], sureler[k['id']]) for k in yapilacak], 'MD5')
@@ -441,12 +445,12 @@ class TaramaIscisi(QThread):
                             self.oge_bitti.emit(durum_metni, not_)
                         durum = os.stat(kayit['path'])
                         if (durum.st_size, durum.st_mtime_ns) != (kayit['size'], kayit['mtime']):
-                            raise RuntimeError('Video değişmiş; bir sonraki taramada yeniden işlenecek.')
+                            raise RuntimeError(_t('Video değişmiş; bir sonraki taramada yeniden işlenecek.'))
                         bilgiyi_guncelle(db, kayit['id'], {'md5': md5})
                     tamamlanan.add(kayit['id'])
                 except Exception as hata:
                     hatali += 1
-                    self.gunluk.emit(f'Bilgi okunamadı — {kayit["path"]}: {hata}')
+                    self.gunluk.emit(_t('Bilgi okunamadı — {yol}: {hata}', yol=kayit['path'], hata=hata))
                 finally:
                     self.ilerleme.emit(i, len(yapilacak))
         return len(tamamlanan), hatali

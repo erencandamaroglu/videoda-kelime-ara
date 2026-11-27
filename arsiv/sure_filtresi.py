@@ -2,6 +2,8 @@
 import math
 from dataclasses import dataclass
 
+from .ceviri import _t
+
 MODLAR = ('tumu', 'en_fazla', 'en_az', 'arasinda')
 # ayarlar.ini'de eski sürümün yazdığı değerler
 ESKI_MODLAR = {'all': 'tumu', 'maximum': 'en_fazla', 'minimum': 'en_az', 'between': 'arasinda'}
@@ -15,28 +17,28 @@ class SureFiltresi:
 
     def __post_init__(self):
         if self.mod not in MODLAR:
-            raise ValueError('Geçersiz süre filtresi.')
+            raise ValueError(_t('Geçersiz süre filtresi.'))
         if not all(math.isfinite(d) and d >= 0 for d in (self.en_az, self.en_fazla)):
-            raise ValueError('Süreler sıfır veya pozitif olmalı.')
+            raise ValueError(_t('Süreler sıfır veya pozitif olmalı.'))
         if self.mod == 'arasinda' and self.en_az > self.en_fazla:
-            raise ValueError('Alt süre sınırı üst sınırdan büyük olamaz.')
+            raise ValueError(_t('Alt süre sınırı üst sınırdan büyük olamaz.'))
 
     def kabul_eder(self, saniye):
         if self.mod == 'tumu':
             return True
         if not math.isfinite(saniye) or saniye < 0:
-            raise ValueError('Video süresi okunamadı.')
+            raise ValueError(_t('Video süresi okunamadı.'))
         return ((self.mod not in ('en_az', 'arasinda') or saniye >= self.en_az * 60)
                 and (self.mod not in ('en_fazla', 'arasinda') or saniye <= self.en_fazla * 60))
 
     def aciklama(self):
         if self.mod == 'en_fazla':
-            return f'En fazla {self.en_fazla:g} dakika'
+            return _t('En fazla {dk} dakika', dk=f'{self.en_fazla:g}')
         if self.mod == 'en_az':
-            return f'En az {self.en_az:g} dakika'
+            return _t('En az {dk} dakika', dk=f'{self.en_az:g}')
         if self.mod == 'arasinda':
-            return f'{self.en_az:g}–{self.en_fazla:g} dakika arasında (sınırlar dahil)'
-        return 'Tüm süreler'
+            return _t('{alt}–{ust} dakika arasında (sınırlar dahil)', alt=f'{self.en_az:g}', ust=f'{self.en_fazla:g}')
+        return _t('Tüm süreler')
 
 
 def video_suresi(yol):
@@ -44,5 +46,5 @@ def video_suresi(yol):
     from .medya_bilgisi import incele
     sure = incele(yol)['duration']
     if sure is None:
-        raise ValueError('Video süresi okunamadı; süre filtresi açık olduğu için işlenmedi.')
+        raise ValueError(_t('Video süresi okunamadı; süre filtresi açık olduğu için işlenmedi.'))
     return sure

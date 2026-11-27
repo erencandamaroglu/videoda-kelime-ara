@@ -1,6 +1,7 @@
 """Ana pencere: klasör tarama, kelime arama / SRT, video listesi ve ayarlar sekmeleri.
 
-ayarlar.ini anahtarları (scan/model, folders/paths, schedule/start ...) eski sürümle uyum için değiştirilmez."""
+ayarlar.ini anahtarları (scan/model, folders/paths, schedule/start ...) eski sürümle uyum için değiştirilmez.
+Kullanıcıya görünen tüm metinler _t() ile çevrilir (bkz. ceviri.py)."""
 import math
 import os
 import time
@@ -16,6 +17,8 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QD
                              QVBoxLayout, QWidget)
 
 from .bag_penceresi import KopukBagPenceresi
+from .ceviri import DILLER as ARAYUZ_DILLERI
+from .ceviri import _t, dil_kodu, yuzde
 from .detay_penceresi import DetayPenceresi, gezginde_goster, okunur_boyut, saat
 from .isci import TaramaIscisi
 from .konusma import gpu_durumu
@@ -36,6 +39,7 @@ SUTUN_BOYUT, SUTUN_SURE, SUTUN_DURUM, SUTUN_CUBUK, SUTUN_GECEN = 3, 4, 6, 7, 8
 TAHMIN_EN_AZ_SANIYE = 30
 ZAMANLAYICI_ARALIGI_MS = 30_000
 VARSAYILAN_KLASORLER = []  # ilk açılışta liste boştur; klasörler "Ekle" ile seçilir ve ayarlar.ini'de saklanır
+TARIH_SAAT = '%d.%m.%Y %H:%M'
 
 
 def kalan_sure_tahmini(biten, toplam, ilk, gecen):
@@ -49,18 +53,18 @@ def kalan_sure_tahmini(biten, toplam, ilk, gecen):
 def sure_metni(saniye):
     dakika = round(saniye / 60)
     if dakika < 1:
-        return '1 dk\'dan az'
+        return _t("1 dk'dan az")
     gun, kalan = divmod(dakika, 1440)
     sa, dakika = divmod(kalan, 60)
     if gun:
-        return f'{gun} gün {sa} sa'
-    return f'{sa} sa {dakika} dk' if sa else f'{dakika} dk'
+        return _t('{gun} gün {sa} sa', gun=gun, sa=sa)
+    return _t('{sa} sa {dk} dk', sa=sa, dk=dakika) if sa else _t('{dk} dk', dk=dakika)
 
 
 def bitis_metni(saniye, simdi=None):
     simdi = simdi or datetime.now()
     bitis = simdi + timedelta(seconds=saniye)
-    return bitis.strftime('%H:%M') if bitis.date() == simdi.date() else bitis.strftime('%d.%m.%Y %H:%M')
+    return bitis.strftime('%H:%M') if bitis.date() == simdi.date() else bitis.strftime(TARIH_SAAT)
 
 
 class AralikFiltresi(QWidget):
@@ -74,12 +78,12 @@ class AralikFiltresi(QWidget):
         duzen.setContentsMargins(0, 0, 0, 0)
         duzen.addWidget(QLabel(etiket))
         self.alt, self.ust = QDoubleSpinBox(), QDoubleSpinBox()
-        for kutu, ipucu in ((self.alt, 'En az'), (self.ust, 'En fazla')):
+        for kutu, ipucu in ((self.alt, _t('En az')), (self.ust, _t('En fazla'))):
             kutu.setRange(0, en_fazla)
             kutu.setDecimals(1)
             kutu.setSuffix(sonek)
             kutu.setSpecialValueText('—')
-            kutu.setToolTip(f'{ipucu} (sınırlar dahil). — : sınır yok')
+            kutu.setToolTip(_t('{ipucu} (sınırlar dahil). — : sınır yok', ipucu=ipucu))
             kutu.setMinimumWidth(95)
             kutu.editingFinished.connect(self.degistiyse_bildir)
             duzen.addWidget(kutu)
@@ -95,7 +99,7 @@ class AralikFiltresi(QWidget):
     def sinirlar(self):
         alt, ust = self.alt.value(), self.ust.value()
         if alt and ust and alt > ust:
-            raise ValueError('Alt sınır üst sınırdan büyük olamaz.')
+            raise ValueError(_t('Alt sınır üst sınırdan büyük olamaz.'))
         return (alt * self.carpan if alt else None, ust * self.carpan if ust else None)
 
 
@@ -107,16 +111,16 @@ class KlasorFiltresi(QComboBox):
         super().__init__()
         self.setModel(QStandardItemModel(self))
         self.view().viewport().installEventFilter(self)
-        self.ozet = 'Tüm klasörler'
+        self.ozet = _t('Tüm klasörler')
 
     def klasorleri_ayarla(self, klasorler):
         secili = set(self.secili())
         self.model().clear()
-        tumu = QStandardItem('Tüm klasörler')
+        tumu = QStandardItem(_t('Tüm klasörler'))
         tumu.setCheckable(True)
         self.model().appendRow(tumu)
         for yol, sayi in klasorler:
-            oge = QStandardItem(f'{yol}  ({sayi} video)')
+            oge = QStandardItem(_t('{yol}  ({sayi} video)', yol=yol, sayi=sayi))
             oge.setData(yol, Qt.ItemDataRole.UserRole)
             oge.setCheckable(True)
             oge.setCheckState(Qt.CheckState.Checked if yol in secili else Qt.CheckState.Unchecked)
@@ -135,9 +139,9 @@ class KlasorFiltresi(QComboBox):
         if tumu is not None:
             tumu.setCheckState(Qt.CheckState.Unchecked if self.secili() else Qt.CheckState.Checked)
         adlar = [Path(y).name or y for y in self.secili()]
-        self.setToolTip('\n'.join(self.secili()) or 'Tüm klasörlerde aranır')
-        self.ozet = ('Tüm klasörler' if not adlar else adlar[0] if len(adlar) == 1
-                     else f'{len(adlar)} klasör: ' + ', '.join(adlar))
+        self.setToolTip('\n'.join(self.secili()) or _t('Tüm klasörlerde aranır'))
+        self.ozet = (_t('Tüm klasörler') if not adlar else adlar[0] if len(adlar) == 1
+                     else _t('{sayi} klasör: ', sayi=len(adlar)) + ', '.join(adlar))
         self.update()
 
     def eventFilter(self, nesne, olay):
@@ -170,20 +174,20 @@ class YenidenIslePenceresi(QDialog):
 
     def __init__(self, ust, sayi, model, dil):
         super().__init__(ust)
-        self.setWindowTitle('Yeniden işle')
+        self.setWindowTitle(_t('Yeniden işle'))
         duzen = QVBoxLayout(self)
-        duzen.addWidget(QLabel(f'{sayi} videonun altyazısı seçilen modelle yeniden oluşturulacak.\n'
-                               'Eski altyazı, yenisi başarıyla kaydedilene kadar korunur.'))
+        duzen.addWidget(QLabel(_t('{sayi} videonun altyazısı seçilen modelle yeniden oluşturulacak.\n'
+                                  'Eski altyazı, yenisi başarıyla kaydedilene kadar korunur.', sayi=sayi)))
         form = QFormLayout()
         self.model = QComboBox()
         self.model.addItems(MODELLER)
         self.model.setCurrentText(model)
         self.dil = QComboBox()
         for etiket, deger in DILLER:
-            self.dil.addItem(etiket, deger)
+            self.dil.addItem(_t(etiket), deger)
         self.dil.setCurrentIndex(max(0, self.dil.findData(dil)))
-        form.addRow('Model:', self.model)
-        form.addRow('Dil:', self.dil)
+        form.addRow(_t('Model:'), self.model)
+        form.addRow(_t('Dil:'), self.dil)
         duzen.addLayout(form)
         dugmeler = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         dugmeler.accepted.connect(self.accept)
@@ -196,9 +200,10 @@ class AnaPencere(QMainWindow):
         super().__init__()
         self.isci = None
         self.zamanli_calisma = False
+        self.yeniden_baslat = False  # dil değişince main.py programı yeniden açar
         self.db = baglan()
         self.ayarlar = QSettings(str(AYARLAR), QSettings.Format.IniFormat)
-        self.setWindowTitle('Videoda Kelime Ara')
+        self.setWindowTitle(_t('Videoda Kelime Ara'))
         self.resize(1150, 800)
         self.sekmeler = QTabWidget()
         self.setCentralWidget(self.sekmeler)
@@ -220,19 +225,19 @@ class AnaPencere(QMainWindow):
     def tarama_sekmesini_kur(self):
         sayfa = QWidget()
         duzen = QVBoxLayout(sayfa)
-        baslik = QLabel('Video klasörleri')
+        baslik = QLabel(_t('Video klasörleri'))
         baslik.setStyleSheet('font-size:22px;font-weight:600')
         duzen.addWidget(baslik)
-        duzen.addWidget(QLabel('Yalnızca işaretli klasörler taranır; alt klasörler de dahildir. Liste ve işaretler hatırlanır.'))
+        duzen.addWidget(QLabel(_t('Yalnızca işaretli klasörler taranır; alt klasörler de dahildir. Liste ve işaretler hatırlanır.')))
         klasor_satiri = QHBoxLayout()
         self.klasorler = QListWidget()
         self.klasorler.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.klasorler.setMaximumHeight(125)
         klasor_satiri.addWidget(self.klasorler)
         klasor_dugmeleri = QVBoxLayout()
-        for etiket, islev in [('Ekle', self.klasor_ekle), ('Çıkar', self.klasorleri_cikar),
-                              ('Tümünü seç', lambda: self.klasorleri_isaretle(True)),
-                              ('Hiçbirini seçme', lambda: self.klasorleri_isaretle(False))]:
+        for etiket, islev in [(_t('Ekle'), self.klasor_ekle), (_t('Çıkar'), self.klasorleri_cikar),
+                              (_t('Tümünü seç'), lambda: self.klasorleri_isaretle(True)),
+                              (_t('Hiçbirini seçme'), lambda: self.klasorleri_isaretle(False))]:
             dugme = QPushButton(etiket)
             dugme.clicked.connect(islev)
             klasor_dugmeleri.addWidget(dugme)
@@ -247,37 +252,37 @@ class AnaPencere(QMainWindow):
         self.model.currentTextChanged.connect(lambda deger: self.ayarlar.setValue('scan/model', deger))
         self.dil = QComboBox()
         for etiket, deger in DILLER:
-            self.dil.addItem(etiket, deger)
+            self.dil.addItem(_t(etiket), deger)
         self.dil.setCurrentIndex(max(0, self.dil.findData(self.ayarlar.value('scan/language', 'tr', type=str))))
         self.dil.currentIndexChanged.connect(lambda: self.ayarlar.setValue('scan/language', self.dil.currentData()))
-        secenekler.addWidget(QLabel('Model:'))
+        secenekler.addWidget(QLabel(_t('Model:')))
         secenekler.addWidget(self.model)
-        secenekler.addWidget(QLabel('Dil:'))
+        secenekler.addWidget(QLabel(_t('Dil:')))
         secenekler.addWidget(self.dil)
-        self.yeniden_olustur = QCheckBox('İşlenenleri yeniden oluştur')
+        self.yeniden_olustur = QCheckBox(_t('İşlenenleri yeniden oluştur'))
         secenekler.addWidget(self.yeniden_olustur)
-        self.bilgi_tamamla = QCheckBox('Eksik video bilgilerini ve MD5 değerlerini tamamla')
-        self.bilgi_tamamla.setToolTip('Önceden işlenmiş videoların süre, tür, çözünürlük ve MD5 değerleri altyazı işinden sonra\n'
-                                      'tamamlanır. MD5 için dosyanın tamamı okunur; büyük arşivde uzun sürebilir.\n'
-                                      'Durdurulursa kalan videolar sonraki taramada devam eder.')
+        self.bilgi_tamamla = QCheckBox(_t('Eksik video bilgilerini ve MD5 değerlerini tamamla'))
+        self.bilgi_tamamla.setToolTip(_t('Önceden işlenmiş videoların süre, tür, çözünürlük ve MD5 değerleri altyazı işinden sonra\n'
+                                         'tamamlanır. MD5 için dosyanın tamamı okunur; büyük arşivde uzun sürebilir.\n'
+                                         'Durdurulursa kalan videolar sonraki taramada devam eder.'))
         self.bilgi_tamamla.setChecked(self.ayarlar.value('scan/complete_info', True, type=bool))
         self.bilgi_tamamla.toggled.connect(lambda acik: self.ayarlar.setValue('scan/complete_info', acik))
         secenekler.addWidget(self.bilgi_tamamla)
         secenekler.addStretch()
         duzen.addLayout(secenekler)
         sure_satiri = QHBoxLayout()
-        sure_satiri.addWidget(QLabel('Video süresi:'))
+        sure_satiri.addWidget(QLabel(_t('Video süresi:')))
         self.sure_modu = QComboBox()
         for etiket, deger in [('Tüm süreler', 'tumu'), ('En fazla (≤)', 'en_fazla'),
                               ('En az (≥)', 'en_az'), ('İki süre arasında', 'arasinda')]:
-            self.sure_modu.addItem(etiket, deger)
+            self.sure_modu.addItem(_t(etiket), deger)
         sure_satiri.addWidget(self.sure_modu)
         self.sure_alt = QDoubleSpinBox()
         self.sure_ust = QDoubleSpinBox()
         for kutu in (self.sure_alt, self.sure_ust):
             kutu.setRange(0, 100000)
             kutu.setDecimals(2)
-            kutu.setSuffix(' dk')
+            kutu.setSuffix(_t(' dk'))
         kayitli_mod = self.ayarlar.value('scan/duration_mode', 'tumu', type=str)
         self.sure_modu.setCurrentIndex(max(0, self.sure_modu.findData(ESKI_MODLAR.get(kayitli_mod, kayitli_mod))))
         self.sure_alt.setValue(self.ayarlar.value('scan/duration_min', 1.0, type=float))
@@ -285,23 +290,23 @@ class AnaPencere(QMainWindow):
         self.sure_modu.currentIndexChanged.connect(lambda: self.ayarlar.setValue('scan/duration_mode', self.sure_modu.currentData()))
         self.sure_alt.valueChanged.connect(lambda deger: self.ayarlar.setValue('scan/duration_min', deger))
         self.sure_ust.valueChanged.connect(lambda deger: self.ayarlar.setValue('scan/duration_max', deger))
-        self.sure_alt_etiketi = QLabel('Alt sınır:')
-        self.sure_ust_etiketi = QLabel('Üst sınır:')
+        self.sure_alt_etiketi = QLabel(_t('Alt sınır:'))
+        self.sure_ust_etiketi = QLabel(_t('Üst sınır:'))
         for bilesen in (self.sure_alt_etiketi, self.sure_alt, self.sure_ust_etiketi, self.sure_ust):
             sure_satiri.addWidget(bilesen)
         sure_satiri.addStretch()
         duzen.addLayout(sure_satiri)
-        duzen.addWidget(QLabel('Süre sınırları dahildir. Filtre dışındaki videolar işlenmez; mevcut kayıtlar korunur.'))
+        duzen.addWidget(QLabel(_t('Süre sınırları dahildir. Filtre dışındaki videolar işlenmez; mevcut kayıtlar korunur.')))
         self.sure_modu.currentIndexChanged.connect(self.sure_kontrollerini_guncelle)
         self.sure_kontrollerini_guncelle()
-        ipucu = QLabel('small: dengeli • base/tiny: daha hızlı • medium/large-v3: daha yavaş, daha fazla bellek\n'
-                       'İlk model indirmesi internet gerektirir. Sonraki işlemler yereldir. GPU / CPU seçimi Ayarlar sekmesindedir.')
+        ipucu = QLabel(_t('small: dengeli • base/tiny: daha hızlı • medium/large-v3: daha yavaş, daha fazla bellek\n'
+                          'İlk model indirmesi internet gerektirir. Sonraki işlemler yereldir. GPU / CPU seçimi Ayarlar sekmesindedir.'))
         ipucu.setWordWrap(True)
         duzen.addWidget(ipucu)
         eylemler = QHBoxLayout()
-        self.baslat_dugmesi = QPushButton('Tara ve altyazıları oluştur')
+        self.baslat_dugmesi = QPushButton(_t('Tara ve altyazıları oluştur'))
         self.baslat_dugmesi.clicked.connect(lambda: self.taramayi_baslat())
-        self.durdur_dugmesi = QPushButton('Durdur')
+        self.durdur_dugmesi = QPushButton(_t('Durdur'))
         self.durdur_dugmesi.setEnabled(False)
         self.durdur_dugmesi.clicked.connect(self.durdur)
         eylemler.addWidget(self.baslat_dugmesi)
@@ -309,13 +314,13 @@ class AnaPencere(QMainWindow):
         duzen.addLayout(eylemler)
         self.ilerleme = QProgressBar()
         duzen.addWidget(self.ilerleme)
-        self.durum = QLabel('Hazır')
+        self.durum = QLabel(_t('Hazır'))
         duzen.addWidget(self.durum)
         self.gunluk = QPlainTextEdit()
         self.gunluk.setReadOnly(True)
         self.gunluk.setMaximumBlockCount(3000)
         self.tarama_listesi = QTableWidget(0, len(TARAMA_SUTUNLARI))
-        self.tarama_listesi.setHorizontalHeaderLabels(TARAMA_SUTUNLARI)
+        self.tarama_listesi.setHorizontalHeaderLabels([_t(s) for s in TARAMA_SUTUNLARI])
         self.tarama_listesi.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tarama_listesi.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tarama_listesi.verticalHeader().setDefaultSectionSize(26)
@@ -329,10 +334,10 @@ class AnaPencere(QMainWindow):
         self.tarama_saati.setInterval(1000)
         self.tarama_saati.timeout.connect(self.tarama_tik)
         alt_sekmeler = QTabWidget()
-        alt_sekmeler.addTab(self.tarama_listesi, 'Liste')
-        alt_sekmeler.addTab(self.gunluk, 'Detaylı log')
+        alt_sekmeler.addTab(self.tarama_listesi, _t('Liste'))
+        alt_sekmeler.addTab(self.gunluk, _t('Detaylı log'))
         duzen.addWidget(alt_sekmeler, 1)
-        self.sekmeler.addTab(sayfa, 'Klasör tarama')
+        self.sekmeler.addTab(sayfa, _t('Klasör tarama'))
 
     # ---------- Kelime arama sekmesi ----------
 
@@ -341,54 +346,55 @@ class AnaPencere(QMainWindow):
         duzen = QVBoxLayout(sayfa)
         satir = QHBoxLayout()
         self.sorgu = QLineEdit()
-        self.sorgu.setPlaceholderText('Kelime yazın: hayat  •  Birden fazla kelime: birine mi muhtaç')
+        self.sorgu.setPlaceholderText(_t('Kelime yazın: hayat  •  Birden fazla kelime: birine mi muhtaç'))
         self.sorgu.returnPressed.connect(self.bul)
-        dugme = QPushButton('Ara')
+        dugme = QPushButton(_t('Ara'))
         dugme.clicked.connect(self.bul)
         satir.addWidget(self.sorgu)
         satir.addWidget(dugme)
         duzen.addLayout(satir)
         filtreler = QHBoxLayout()
-        filtreler.addWidget(QLabel('Klasör:'))
+        filtreler.addWidget(QLabel(_t('Klasör:')))
         self.arama_klasoru = KlasorFiltresi()
         self.arama_klasoru.setMinimumWidth(420)
         self.arama_klasoru.degisti.connect(self.sorgu_varsa_bul)
         filtreler.addWidget(self.arama_klasoru)
-        yenile = QPushButton('Listeyi yenile')
+        yenile = QPushButton(_t('Listeyi yenile'))
         yenile.clicked.connect(self.kokleri_yenile)
         filtreler.addWidget(yenile)
-        self.tam_kelime = QCheckBox('Yalnızca tam kelime')
-        self.tam_kelime.setToolTip('Kapalıyken "hayat" araması "hayatı", "hayatımız" gibi ekli halleri de bulur.')
+        self.tam_kelime = QCheckBox(_t('Yalnızca tam kelime'))
+        self.tam_kelime.setToolTip(_t('Kapalıyken "hayat" araması "hayatı", "hayatımız" gibi ekli halleri de bulur.'))
         self.tam_kelime.toggled.connect(self.sorgu_varsa_bul)
         filtreler.addWidget(self.tam_kelime)
-        filtreler.addWidget(QLabel('Kapsam:'))
+        filtreler.addWidget(QLabel(_t('Kapsam:')))
         self.kapsam = QComboBox()
-        self.kapsam.addItem('Aynı videoda (parçalı)', 'video')
-        self.kapsam.addItem('Aynı satırda', 'satir')
-        self.kapsam.setToolTip('Aynı videoda: her kelime ayrı aranır; hepsinin geçtiği videolardaki ilgili satırlar listelenir.\n'
-                               'Aynı satırda: tüm kelimeler aynı altyazı satırında olmalıdır.')
+        self.kapsam.addItem(_t('Aynı videoda (parçalı)'), 'video')
+        self.kapsam.addItem(_t('Aynı satırda'), 'satir')
+        self.kapsam.setToolTip(_t('Aynı videoda: her kelime ayrı aranır; hepsinin geçtiği videolardaki ilgili satırlar listelenir.\n'
+                                  'Aynı satırda: tüm kelimeler aynı altyazı satırında olmalıdır.'))
         self.kapsam.currentIndexChanged.connect(self.sorgu_varsa_bul)
         filtreler.addWidget(self.kapsam)
-        self.onizleme_goster = QCheckBox('Görüntüleri göster')
-        self.onizleme_goster.setToolTip('İlk eşleşme saniyesindeki kare arka planda üretilir ve veriler\\onizlemeler klasöründe saklanır.')
+        self.onizleme_goster = QCheckBox(_t('Görüntüleri göster'))
+        self.onizleme_goster.setToolTip(_t('İlk eşleşme saniyesindeki kare arka planda üretilir ve veriler\\onizlemeler klasöründe saklanır.'))
         self.onizleme_goster.setChecked(self.ayarlar.value('search/thumbnails', True, type=bool))
         self.onizleme_goster.toggled.connect(self.onizleme_degisti)
         filtreler.addWidget(self.onizleme_goster)
         filtreler.addStretch()
         duzen.addLayout(filtreler)
         araliklar = QHBoxLayout()
-        self.arama_suresi = AralikFiltresi('Süre:', ' dk', 60, 100000)
-        self.arama_boyutu = AralikFiltresi('Boyut:', ' MB', 1024 * 1024, 10_000_000)
+        self.arama_suresi = AralikFiltresi(_t('Süre:'), _t(' dk'), 60, 100000)
+        self.arama_boyutu = AralikFiltresi(_t('Boyut:'), ' MB', 1024 * 1024, 10_000_000)
         for bilesen in (self.arama_suresi, self.arama_boyutu):
             bilesen.degisti.connect(self.sorgu_varsa_bul)
             araliklar.addWidget(bilesen)
-        araliklar.addWidget(QLabel('(isteğe bağlı; — sınır yok. Süresi henüz okunmamış videolar süre filtresinde listelenmez.)'))
+        araliklar.addWidget(QLabel(_t('(isteğe bağlı; — sınır yok. Süresi henüz okunmamış videolar süre filtresinde listelenmez.)')))
         araliklar.addStretch()
         duzen.addLayout(araliklar)
-        self.sayi = QLabel('Büyük/küçük harf ve Türkçe karakter duyarsızdır: "dusunce" yazınca "Düşünce" de bulunur.')
+        self.sayi = QLabel(_t('Büyük/küçük harf ve Türkçe karakter duyarsızdır: "dusunce" yazınca "Düşünce" de bulunur.'))
         duzen.addWidget(self.sayi)
         self.tablo = QTableWidget(0, 5)
-        self.tablo.setHorizontalHeaderLabels(['Video / tam yol', 'İlk eşleşme', 'Eşleşen satır', 'Altyazı (ilk eşleşen satır)', 'Görüntü'])
+        self.tablo.setHorizontalHeaderLabels([_t('Video / tam yol'), _t('İlk eşleşme'), _t('Eşleşen satır'),
+                                              _t('Altyazı (ilk eşleşen satır)'), _t('Görüntü')])
         self.tablo.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tablo.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.tablo.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -406,15 +412,17 @@ class AnaPencere(QMainWindow):
         self.tablo.setColumnHidden(ONIZLEME_SUTUNU, not self.onizleme_goster.isChecked())
         duzen.addWidget(self.tablo)
         dugmeler = QHBoxLayout()
-        for etiket, islev in [('Detay', self.detay_goster), ('Videoyu aç', self.videoyu_ac), ('Klasörünü aç', self.klasoru_ac),
-                              ('Seçili videonun SRT dosyasını kaydet', self.srt_kaydet),
-                              ('Tüm altyazıları SRT olarak dışa aktar', self.tumunu_aktar)]:
+        for etiket, islev in [(_t('Detay'), self.detay_goster), (_t('Videoyu aç'), self.videoyu_ac),
+                              (_t('Klasörünü aç'), self.klasoru_ac),
+                              (_t('Seçili videonun SRT dosyasını kaydet'), self.srt_kaydet),
+                              (_t('Tüm altyazıları SRT olarak dışa aktar'), self.tumunu_aktar)]:
             dugme = QPushButton(etiket)
             dugme.clicked.connect(islev)
             dugmeler.addWidget(dugme)
         duzen.addLayout(dugmeler)
-        duzen.addWidget(QLabel('Detay (veya satıra çift tıklama): videonun tüm altyazısı ve oynatıcı açılır; video seçili satırın saniyesinden başlar.'))
-        self.sekmeler.addTab(sayfa, 'Kelime arama / SRT')
+        duzen.addWidget(QLabel(_t('Detay (veya satıra çift tıklama): videonun tüm altyazısı ve oynatıcı açılır; '
+                                  'video seçili satırın saniyesinden başlar.')))
+        self.sekmeler.addTab(sayfa, _t('Kelime arama / SRT'))
 
     # ---------- Ayarlar sekmesi ve zamanlayıcı ----------
 
@@ -422,27 +430,57 @@ class AnaPencere(QMainWindow):
         self.ayarlar_sayfasi = QWidget()
         sayfa = QVBoxLayout(self.ayarlar_sayfasi)
         form = QFormLayout()
+        self.arayuz_dili = QComboBox()
+        for etiket, deger in ARAYUZ_DILLERI:
+            self.arayuz_dili.addItem(etiket, deger)
+        self.arayuz_dili.setCurrentIndex(max(0, self.arayuz_dili.findData(dil_kodu())))
+        self.arayuz_dili.currentIndexChanged.connect(self.arayuz_dili_degisti)
+        form.addRow(_t('Arayüz dili:'), self.arayuz_dili)
         self.birim = QComboBox()
         for etiket, deger in [('Otomatik (GPU varsa GPU)', 'auto'), ('GPU (NVIDIA CUDA)', 'cuda'), ('CPU', 'cpu')]:
-            self.birim.addItem(etiket, deger)
+            self.birim.addItem(_t(etiket), deger)
         self.birim.setCurrentIndex(max(0, self.birim.findData(self.ayarlar.value('processing/device', 'auto', type=str))))
         self.birim.currentIndexChanged.connect(lambda: self.ayarlar.setValue('processing/device', self.birim.currentData()))
-        form.addRow('İşlem birimi:', self.birim)
+        form.addRow(_t('İşlem birimi:'), self.birim)
         self.gpu_notu = QLabel('')
         self.gpu_notu.setWordWrap(True)
-        form.addRow('GPU durumu:', self.gpu_notu)
+        form.addRow(_t('GPU durumu:'), self.gpu_notu)
         sayfa.addLayout(form)
-        not_ = QLabel('Ayarlar bir sonraki taramada geçerli olur. GPU başlatılamazsa işlem CPU ile sürer ve bu durum Detaylı log sekmesine yazılır.')
+        not_ = QLabel(_t('Ayarlar bir sonraki taramada geçerli olur. GPU başlatılamazsa işlem CPU ile sürer ve bu durum '
+                         'Detaylı log sekmesine yazılır.'))
         not_.setWordWrap(True)
         sayfa.addWidget(not_)
         sayfa.addWidget(self.zamanlayici_kutusunu_kur())
         sayfa.addStretch()
-        self.sekmeler.addTab(self.ayarlar_sayfasi, 'Ayarlar')
+        self.sekmeler.addTab(self.ayarlar_sayfasi, _t('Ayarlar'))
+
+    def arayuz_dili_degisti(self):
+        """Seçilen dil kaydedilir; program kapanıp aynı dilde yeniden açılır (main.py)."""
+        yeni = self.arayuz_dili.currentData()
+        if yeni == dil_kodu():
+            return
+        if self.isci and self.isci.isRunning():
+            QMessageBox.information(self, 'Videoda Kelime Ara',
+                                    'Dil, devam eden işlem bitince program yeniden açıldığında değişir.\n'
+                                    'The language will change when the program is restarted after the current job.')
+            self.ayarlar.setValue('ui/language', yeni)
+            return
+        if QMessageBox.question(self, 'Videoda Kelime Ara',
+                                'Dili değiştirmek için program yeniden başlatılacak. Devam edilsin mi?\n'
+                                'The program will restart to change the language. Continue?') != QMessageBox.StandardButton.Yes:
+            self.arayuz_dili.blockSignals(True)
+            self.arayuz_dili.setCurrentIndex(max(0, self.arayuz_dili.findData(dil_kodu())))
+            self.arayuz_dili.blockSignals(False)
+            return
+        self.ayarlar.setValue('ui/language', yeni)
+        self.ayarlar.sync()
+        self.yeniden_baslat = True
+        self.close()
 
     def zamanlayici_kutusunu_kur(self):
-        kutu = QGroupBox('Otomatik tarama zamanlayıcısı')
+        kutu = QGroupBox(_t('Otomatik tarama zamanlayıcısı'))
         duzen = QVBoxLayout(kutu)
-        self.zamanlayici_acik = QCheckBox('Belirlenen saatlerde otomatik tara')
+        self.zamanlayici_acik = QCheckBox(_t('Belirlenen saatlerde otomatik tara'))
         self.zamanlayici_acik.setChecked(self.ayarlar.value('schedule/enabled', False, type=bool))
         duzen.addWidget(self.zamanlayici_acik)
         satir = QHBoxLayout()
@@ -451,17 +489,18 @@ class AnaPencere(QMainWindow):
             kutucuk.setDisplayFormat('HH:mm')
             deger = saat_coz(self.ayarlar.value(f'schedule/{anahtar}', varsayilan, type=str), saat_coz(varsayilan, None))
             kutucuk.setTime(QTime(deger.hour, deger.minute))
-        satir.addWidget(QLabel('Başlangıç:'))
+        satir.addWidget(QLabel(_t('Başlangıç:')))
         satir.addWidget(self.zaman_baslangic)
-        satir.addWidget(QLabel('Bitiş:'))
+        satir.addWidget(QLabel(_t('Bitiş:')))
         satir.addWidget(self.zaman_bitis)
         satir.addStretch()
         duzen.addLayout(satir)
-        bilgi = QLabel('Başlangıç saatinde, Klasör tarama sekmesindeki işaretli klasörler ve ayarlarla (model, dil, süre filtresi, '
-                       'eksik bilgileri tamamla) tarama başlar. "İşlenenleri yeniden oluştur" otomatik taramada kullanılmaz.\n'
-                       'Bitiş saatinde işlenmekte olan video tamamlanır, sıradaki videolar bir sonraki aralığa kalır. '
-                       'Bitiş başlangıçtan küçükse aralık gece yarısını aşar (ör. 20:00 – 07:00).\n'
-                       'Her aralıkta bir kez çalışır. Uygulamanın açık kalması gerekir; tarama sürerken bilgisayarın uykuya geçmesi engellenir.')
+        bilgi = QLabel(_t('Başlangıç saatinde, Klasör tarama sekmesindeki işaretli klasörler ve ayarlarla (model, dil, süre filtresi, '
+                          'eksik bilgileri tamamla) tarama başlar. "İşlenenleri yeniden oluştur" otomatik taramada kullanılmaz.\n'
+                          'Bitiş saatinde işlenmekte olan video tamamlanır, sıradaki videolar bir sonraki aralığa kalır. '
+                          'Bitiş başlangıçtan küçükse aralık gece yarısını aşar (ör. 20:00 – 07:00).\n'
+                          'Her aralıkta bir kez çalışır. Uygulamanın açık kalması gerekir; tarama sürerken bilgisayarın '
+                          'uykuya geçmesi engellenir.'))
         bilgi.setWordWrap(True)
         duzen.addWidget(bilgi)
         self.zamanlayici_durumu = QLabel('')
@@ -484,8 +523,8 @@ class AnaPencere(QMainWindow):
         self.zamanlayici_tik()
 
     def zamanli_tarama_metni(self, aralik, baslangic, bitis):
-        return (f'Otomatik tarama sürüyor; {aralik_sonu(aralik, baslangic, bitis):%d.%m.%Y %H:%M} '
-                'itibarıyla işlenmekte olan video bitince durdurulacak.')
+        return _t('Otomatik tarama sürüyor; {bitis} itibarıyla işlenmekte olan video bitince durdurulacak.',
+                  bitis=aralik_sonu(aralik, baslangic, bitis).strftime(TARIH_SAAT))
 
     def zamanlayici_tik(self):
         """Zamanlayıcı: aralığa girildiyse taramayı başlatır, bitiş saati geldiyse yumuşak durdurur."""
@@ -494,33 +533,34 @@ class AnaPencere(QMainWindow):
         calisiyor = bool(self.isci and self.isci.isRunning())
         if self.zamanli_calisma and calisiyor and not self.isci.yumusak_dur and simdi >= self.zamanli_bitis:
             self.isci.mevcut_isi_bitir()
-            self.gunluk.appendPlainText(f'[{simdi:%H:%M}] Zamanlayıcı: bitiş saati geldi; işlenmekte olan video tamamlanıp durdurulacak.')
-            self.durum.setText('Zamanlayıcı bitiş saati: işlenmekte olan video tamamlanıp durdurulacak...')
+            self.gunluk.appendPlainText(_t('[{saat}] Zamanlayıcı: bitiş saati geldi; işlenmekte olan video tamamlanıp durdurulacak.',
+                                           saat=simdi.strftime('%H:%M')))
+            self.durum.setText(_t('Zamanlayıcı bitiş saati: işlenmekte olan video tamamlanıp durdurulacak...'))
         if self.zamanli_calisma and calisiyor:
             self.zamanlayici_durumu.setText(self.zamanli_tarama_metni(self.zamanli_aralik, baslangic, bitis))
             return
         if not self.zamanlayici_acik.isChecked():
-            self.zamanlayici_durumu.setText('Zamanlayıcı kapalı.')
+            self.zamanlayici_durumu.setText(_t('Zamanlayıcı kapalı.'))
             return
         if baslangic == bitis:
-            self.zamanlayici_durumu.setText('Başlangıç ve bitiş saati aynı olamaz.')
+            self.zamanlayici_durumu.setText(_t('Başlangıç ve bitiş saati aynı olamaz.'))
             return
         aralik = etkin_aralik(simdi, baslangic, bitis)
         anahtar = aralik.isoformat(timespec='minutes') if aralik else None
         if aralik and anahtar != self.ayarlar.value('schedule/last_window', '', type=str):
             if calisiyor:
-                self.zamanlayici_durumu.setText('Otomatik tarama zamanı geldi; devam eden işlem bitince başlayacak.')
+                self.zamanlayici_durumu.setText(_t('Otomatik tarama zamanı geldi; devam eden işlem bitince başlayacak.'))
                 return
             self.ayarlar.setValue('schedule/last_window', anahtar)
-            self.gunluk.appendPlainText(f'[{simdi:%H:%M}] Zamanlayıcı: otomatik tarama başlatılıyor.')
+            self.gunluk.appendPlainText(_t('[{saat}] Zamanlayıcı: otomatik tarama başlatılıyor.', saat=simdi.strftime('%H:%M')))
             if self.taramayi_baslat(otomatik=True):
                 self.zamanli_calisma, self.zamanli_aralik = True, aralik
                 self.zamanli_bitis = aralik_sonu(aralik, baslangic, bitis)
                 self.zamanlayici_durumu.setText(self.zamanli_tarama_metni(aralik, baslangic, bitis))
                 return
         sonraki = sonraki_baslangic(simdi, baslangic, bitis)
-        self.zamanlayici_durumu.setText(f'Sonraki otomatik tarama: {sonraki:%d.%m.%Y %H:%M} – '
-                                        f'{aralik_sonu(sonraki, baslangic, bitis):%d.%m.%Y %H:%M}')
+        self.zamanlayici_durumu.setText(_t('Sonraki otomatik tarama: {bas} – {bit}', bas=sonraki.strftime(TARIH_SAAT),
+                                           bit=aralik_sonu(sonraki, baslangic, bitis).strftime(TARIH_SAAT)))
 
     def sekme_degisti(self):
         gecerli = self.sekmeler.currentWidget()
@@ -536,34 +576,34 @@ class AnaPencere(QMainWindow):
         self.liste_yuklendi, self.liste_sayfa_no, self.liste_sirasi, self.liste_azalan = False, 1, 'yol', False
         duzen = QVBoxLayout(self.liste_sayfasi)
         filtreler = QHBoxLayout()
-        filtreler.addWidget(QLabel('Klasör:'))
+        filtreler.addWidget(QLabel(_t('Klasör:')))
         self.liste_klasoru = KlasorFiltresi()
         self.liste_klasoru.setMinimumWidth(300)
         self.liste_klasoru.degisti.connect(lambda: self.videolari_yukle())
         filtreler.addWidget(self.liste_klasoru)
-        filtreler.addWidget(QLabel('Model / dil:'))
+        filtreler.addWidget(QLabel(_t('Model / dil:')))
         self.liste_modeli = QComboBox()
         self.liste_modeli.setMinimumWidth(180)
         self.liste_modeli.currentIndexChanged.connect(lambda: self.videolari_yukle())
         filtreler.addWidget(self.liste_modeli)
         self.liste_adi = QLineEdit()
-        self.liste_adi.setPlaceholderText('Ad / yol içerir (isteğe bağlı)')
+        self.liste_adi.setPlaceholderText(_t('Ad / yol içerir (isteğe bağlı)'))
         self.liste_adi.returnPressed.connect(lambda: self.videolari_yukle())
         filtreler.addWidget(self.liste_adi)
         duzen.addLayout(filtreler)
         araliklar = QHBoxLayout()
-        self.liste_suresi = AralikFiltresi('Süre:', ' dk', 60, 100000)
-        self.liste_boyutu = AralikFiltresi('Boyut:', ' MB', 1024 * 1024, 10_000_000)
+        self.liste_suresi = AralikFiltresi(_t('Süre:'), _t(' dk'), 60, 100000)
+        self.liste_boyutu = AralikFiltresi(_t('Boyut:'), ' MB', 1024 * 1024, 10_000_000)
         for bilesen in (self.liste_suresi, self.liste_boyutu):
             bilesen.degisti.connect(lambda: self.videolari_yukle())
             araliklar.addWidget(bilesen)
-        uygula = QPushButton('Uygula / yenile')
+        uygula = QPushButton(_t('Uygula / yenile'))
         uygula.clicked.connect(lambda: self.videolari_yukle(self.liste_sayfa_no))
         araliklar.addWidget(uygula)
         araliklar.addStretch()
         duzen.addLayout(araliklar)
         self.liste_tablosu = QTableWidget(0, len(LISTE_SUTUNLARI))
-        self.liste_tablosu.setHorizontalHeaderLabels([etiket for etiket, _ in LISTE_SUTUNLARI])
+        self.liste_tablosu.setHorizontalHeaderLabels([_t(etiket) for etiket, _anahtar in LISTE_SUTUNLARI])
         self.liste_tablosu.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.liste_tablosu.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.liste_tablosu.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -582,44 +622,46 @@ class AnaPencere(QMainWindow):
         self.liste_bilgisi = QLabel('')
         sayfalama.addWidget(self.liste_bilgisi)
         sayfalama.addStretch()
-        sayfalama.addWidget(QLabel('Sayfa başına:'))
+        sayfalama.addWidget(QLabel(_t('Sayfa başına:')))
         self.sayfa_boyutu = QComboBox()
         self.sayfa_boyutu.addItems(['50', '100', '200', '500'])
         self.sayfa_boyutu.setCurrentText(self.ayarlar.value('list/page_size', '100', type=str))
         self.sayfa_boyutu.currentTextChanged.connect(self.sayfa_boyutu_degisti)
         sayfalama.addWidget(self.sayfa_boyutu)
-        self.onceki_sayfa = QPushButton('◀ Önceki')
+        self.onceki_sayfa = QPushButton(_t('◀ Önceki'))
         self.onceki_sayfa.clicked.connect(lambda: self.videolari_yukle(self.liste_sayfa_no - 1))
         sayfalama.addWidget(self.onceki_sayfa)
-        sayfalama.addWidget(QLabel('Sayfa'))
+        sayfalama.addWidget(QLabel(_t('Sayfa')))
         self.sayfa_numarasi = QSpinBox()
         self.sayfa_numarasi.setKeyboardTracking(False)
         self.sayfa_numarasi.valueChanged.connect(lambda no: no != self.liste_sayfa_no and self.videolari_yukle(no))
         sayfalama.addWidget(self.sayfa_numarasi)
         self.sayfa_sayisi = QLabel('/ 1')
         sayfalama.addWidget(self.sayfa_sayisi)
-        self.sonraki_sayfa = QPushButton('Sonraki ▶')
+        self.sonraki_sayfa = QPushButton(_t('Sonraki ▶'))
         self.sonraki_sayfa.clicked.connect(lambda: self.videolari_yukle(self.liste_sayfa_no + 1))
         sayfalama.addWidget(self.sonraki_sayfa)
         duzen.addLayout(sayfalama)
         dugmeler = QHBoxLayout()
-        for etiket, islev in [('Detay', self.detay_goster), ('Videoyu aç', self.videoyu_ac), ('Klasörünü aç', self.klasoru_ac),
-                              ('Seçili videonun SRT dosyasını kaydet', self.srt_kaydet)]:
+        for etiket, islev in [(_t('Detay'), self.detay_goster), (_t('Videoyu aç'), self.videoyu_ac),
+                              (_t('Klasörünü aç'), self.klasoru_ac),
+                              (_t('Seçili videonun SRT dosyasını kaydet'), self.srt_kaydet)]:
             dugme = QPushButton(etiket)
             dugme.clicked.connect(islev)
             dugmeler.addWidget(dugme)
         duzen.addLayout(dugmeler)
         yeniden = QHBoxLayout()
-        for etiket, islev in [('Seçilileri yeniden işle', self.secilileri_yeniden_isle),
-                              ('Filtreye uyan tüm videoları yeniden işle', self.filtreyi_yeniden_isle),
-                              ('Kopuk bağları kontrol et', self.baglari_kontrol_et)]:
+        for etiket, islev in [(_t('Seçilileri yeniden işle'), self.secilileri_yeniden_isle),
+                              (_t('Filtreye uyan tüm videoları yeniden işle'), self.filtreyi_yeniden_isle),
+                              (_t('Kopuk bağları kontrol et'), self.baglari_kontrol_et)]:
             dugme = QPushButton(etiket)
             dugme.clicked.connect(islev)
             yeniden.addWidget(dugme)
         duzen.addLayout(yeniden)
-        duzen.addWidget(QLabel('Sütun başlığına tıklayarak sıralayın. Ctrl / Shift ile birden çok satır seçilir. Boş süre/MD5: bilgi henüz okunmadı '
-                               '(tarama sekmesinde "Eksik video bilgilerini ve MD5 değerlerini tamamla").'))
-        self.sekmeler.addTab(self.liste_sayfasi, 'Video listesi')
+        duzen.addWidget(QLabel(_t('Sütun başlığına tıklayarak sıralayın. Ctrl / Shift ile birden çok satır seçilir. '
+                                  'Boş süre/MD5: bilgi henüz okunmadı (tarama sekmesinde "Eksik video bilgilerini ve '
+                                  'MD5 değerlerini tamamla").')))
+        self.sekmeler.addTab(self.liste_sayfasi, _t('Video listesi'))
 
     def videolari_sirala(self, sutun):
         anahtar = LISTE_SUTUNLARI[sutun][1]
@@ -642,7 +684,7 @@ class AnaPencere(QMainWindow):
                 model=self.liste_modeli.currentData(), sira=self.liste_sirasi, azalan=self.liste_azalan,
                 sinir=boyut, atla=(max(1, sayfa) - 1) * boyut)
         except Exception as hata:
-            QMessageBox.warning(self, 'Video listesi', str(hata))
+            QMessageBox.warning(self, _t('Video listesi'), str(hata))
             return
         sayfalar = max(1, math.ceil(toplam / boyut))
         if sayfa > sayfalar or sayfa < 1:
@@ -655,7 +697,8 @@ class AnaPencere(QMainWindow):
             degerler = [(satir['path'], satir['path'], None),
                         (satir['format'] or '', None, Qt.AlignmentFlag.AlignCenter),
                         (saat(round(satir['duration'] * 1000)) if satir['duration'] is not None else '', None, sag),
-                        (okunur_boyut(satir['size']), f"{satir['size']:,} bayt".replace(',', '.'), sag),
+                        (okunur_boyut(satir['size']), _t('{sayi} bayt', sayi=f"{satir['size']:,}".replace(',', '.')
+                                                         if dil_kodu() == 'tr' else f"{satir['size']:,}"), sag),
                         (cozunurluk, satir['codec'], Qt.AlignmentFlag.AlignCenter),
                         (str(satir['satir']), None, sag),
                         (f"{satir['model']} / {satir['language']}", None, None),
@@ -675,7 +718,8 @@ class AnaPencere(QMainWindow):
         self.onceki_sayfa.setEnabled(sayfa > 1)
         self.sonraki_sayfa.setEnabled(sayfa < sayfalar)
         ilk = (sayfa - 1) * boyut + 1 if satirlar else 0
-        self.liste_bilgisi.setText(f'{toplam} video • {ilk}–{ilk + len(satirlar) - 1 if satirlar else 0} gösteriliyor')
+        self.liste_bilgisi.setText(_t('{toplam} video • {ilk}–{son} gösteriliyor', toplam=toplam, ilk=ilk,
+                                      son=ilk + len(satirlar) - 1 if satirlar else 0))
         self.liste_tablosu.scrollToTop()
 
     def baglari_kontrol_et(self):
@@ -693,14 +737,15 @@ class AnaPencere(QMainWindow):
                                             sure=self.liste_suresi.sinirlar(), boyut=self.liste_boyutu.sinirlar(),
                                             model=self.liste_modeli.currentData()))
         except Exception as hata:
-            QMessageBox.warning(self, 'Yeniden işle', str(hata))
+            QMessageBox.warning(self, _t('Yeniden işle'), str(hata))
 
     def yeniden_isle(self, yollar):
         if self.isci and self.isci.isRunning():
-            QMessageBox.information(self, 'Yeniden işle', 'Devam eden işlem bitmeden yeni işlem başlatılamaz.')
+            QMessageBox.information(self, _t('Yeniden işle'), _t('Devam eden işlem bitmeden yeni işlem başlatılamaz.'))
             return
         if not yollar:
-            QMessageBox.information(self, 'Yeniden işle', 'İşlenecek video yok. Önce listeden video seçin veya filtreyi değiştirin.')
+            QMessageBox.information(self, _t('Yeniden işle'),
+                                    _t('İşlenecek video yok. Önce listeden video seçin veya filtreyi değiştirin.'))
             return
         pencere = YenidenIslePenceresi(self, len(yollar), self.model.currentText(), self.dil.currentData())
         if pencere.exec() != QDialog.DialogCode.Accepted:
@@ -732,13 +777,13 @@ class AnaPencere(QMainWindow):
         return [oge.text() for oge in ogeler if not yalniz_isaretli or oge.checkState() == Qt.CheckState.Checked]
 
     def klasor_ekle(self):
-        klasor = QFileDialog.getExistingDirectory(self, 'Video klasörü seçin')
+        klasor = QFileDialog.getExistingDirectory(self, _t('Video klasörü seçin'))
         if not klasor:
             return
         klasor = os.path.normpath(klasor)
         anahtar = os.path.normcase(klasor)
         if any(os.path.normcase(os.path.normpath(yol)) == anahtar for yol in self.klasor_yollari()):
-            QMessageBox.information(self, 'Klasör ekle', 'Bu klasör listede zaten var.')
+            QMessageBox.information(self, _t('Klasör ekle'), _t('Bu klasör listede zaten var.'))
             return
         self.klasor_ogesi_ekle(klasor)
         self.klasorleri_kaydet()
@@ -762,8 +807,8 @@ class AnaPencere(QMainWindow):
         self.ayarlar.setValue('folders/unchecked', '\n'.join(y for y in self.klasor_yollari() if y not in isaretli))
         self.ayarlar.sync()
         if self.ayarlar.status() != QSettings.Status.NoError:
-            QMessageBox.warning(self, 'Klasör listesi kaydedilemedi',
-                                'veriler/ayarlar.ini dosyasına yazılamadı. Ağ bağlantısını ve yazma iznini kontrol edin.')
+            QMessageBox.warning(self, _t('Klasör listesi kaydedilemedi'),
+                                _t('veriler/ayarlar.ini dosyasına yazılamadı. Ağ bağlantısını ve yazma iznini kontrol edin.'))
             return False
         return True
 
@@ -781,8 +826,8 @@ class AnaPencere(QMainWindow):
         Tarama başladıysa True döner."""
         def uyar(baslik, metin):
             if otomatik:
-                self.gunluk.appendPlainText(f'Zamanlayıcı — {baslik}: {metin}')
-                self.durum.setText(f'Otomatik tarama başlatılamadı: {metin}')
+                self.gunluk.appendPlainText(_t('Zamanlayıcı — {baslik}: {metin}', baslik=baslik, metin=metin))
+                self.durum.setText(_t('Otomatik tarama başlatılamadı: {metin}', metin=metin))
             else:
                 QMessageBox.warning(self, baslik, metin)
         if not otomatik and not self.klasorleri_kaydet():
@@ -790,23 +835,23 @@ class AnaPencere(QMainWindow):
         try:
             sure_filtresi = SureFiltresi(self.sure_modu.currentData(), self.sure_alt.value(), self.sure_ust.value())
         except ValueError as hata:
-            uyar('Süre filtresi', str(hata))
+            uyar(_t('Süre filtresi'), str(hata))
             return False
         kokler = self.klasor_yollari(yalniz_isaretli=True)
         if not kokler:
-            uyar('Klasör kontrolü', 'Taranacak en az bir klasör işaretleyin.')
+            uyar(_t('Klasör kontrolü'), _t('Taranacak en az bir klasör işaretleyin.'))
             return False
         erisilemeyen = [y for y in kokler if not Path(y).is_dir()]
         if erisilemeyen and not otomatik:
-            uyar('Klasör kontrolü', 'Bu klasörlere erişilemiyor:\n' + '\n'.join(erisilemeyen))
+            uyar(_t('Klasör kontrolü'), _t('Bu klasörlere erişilemiyor:') + '\n' + '\n'.join(erisilemeyen))
             return False
         if erisilemeyen:
-            self.gunluk.appendPlainText('Zamanlayıcı — erişilemeyen klasörler atlandı:\n' + '\n'.join(erisilemeyen))
+            self.gunluk.appendPlainText(_t('Zamanlayıcı — erişilemeyen klasörler atlandı:') + '\n' + '\n'.join(erisilemeyen))
             kokler = [y for y in kokler if y not in erisilemeyen]
             if not kokler:
-                uyar('Klasör kontrolü', 'İşaretli klasörlerin hiçbirine erişilemiyor.')
+                uyar(_t('Klasör kontrolü'), _t('İşaretli klasörlerin hiçbirine erişilemiyor.'))
                 return False
-        self.durum.setText('Otomatik tarama: klasörler taranıyor...' if otomatik else 'Klasörler taranıyor...')
+        self.durum.setText(_t('Otomatik tarama: klasörler taranıyor...') if otomatik else _t('Klasörler taranıyor...'))
         self.isciyi_baslat(kokler, self.model.currentText(), self.dil.currentData(),
                            False if otomatik else self.yeniden_olustur.isChecked(),
                            sure_filtresi, self.bilgi_tamamla.isChecked())
@@ -839,7 +884,8 @@ class AnaPencere(QMainWindow):
         self.isci.start()
 
     def ogeler_kuyrukta(self, ogeler, is_turu):
-        """İşlenecek videoların tamamı baştan listelenir; sırası gelince durumu değişir."""
+        """İşlenecek videoların tamamı baştan listelenir; sırası gelince durumu değişir.
+        is_turu ('Altyazı' / 'MD5') anahtar olarak kullanılır, ekranda çevrilir."""
         tablo = self.tarama_listesi
         sag = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         satir = tablo.rowCount()
@@ -850,7 +896,7 @@ class AnaPencere(QMainWindow):
             for sutun, (metin, hiza) in enumerate([
                     (Path(yol).name, None), (str(Path(yol).parent), None), (dosya_turu(yol), Qt.AlignmentFlag.AlignCenter),
                     (okunur_boyut(boyut), sag), (saat(round(sure * 1000)) if sure is not None else '', sag),
-                    (is_turu, None), ('Bekliyor', None), ('', sag), ('', sag)]):
+                    (_t(is_turu), None), (_t('Bekliyor'), None), ('', sag), ('', sag)]):
                 oge = QTableWidgetItem(metin)
                 if hiza is not None:
                     oge.setTextAlignment(hiza)
@@ -863,7 +909,7 @@ class AnaPencere(QMainWindow):
     def oge_basladi(self, yol, is_turu):
         tablo = self.tarama_listesi
         self.oge_satiri = self.tarama_satirlari[(yol, is_turu)]
-        tablo.item(self.oge_satiri, SUTUN_DURUM).setText('İşleniyor')
+        tablo.item(self.oge_satiri, SUTUN_DURUM).setText(_t('İşleniyor'))
         self.oge_cubugu = QProgressBar()
         self.oge_cubugu.setRange(0, 100)
         self.oge_cubugu.setValue(0)
@@ -878,21 +924,22 @@ class AnaPencere(QMainWindow):
         if sure is not None:
             self.tarama_listesi.item(self.oge_satiri, SUTUN_SURE).setText(saat(round(sure * 1000)))
 
-    def oge_ilerlemesi(self, yuzde):
-        self.oge_cubugu.setValue(yuzde)
+    def oge_ilerlemesi(self, yuzde_degeri):
+        self.oge_cubugu.setValue(yuzde_degeri)
 
     def oge_suresini_goster(self):
         self.tarama_listesi.item(self.oge_satiri, SUTUN_GECEN).setText(saat(round((time.monotonic() - self.oge_saati) * 1000)))
 
     def oge_bitti(self, durum, not_):
+        """durum işçinin anahtarıdır ('Tamamlandı', 'Hata', 'Süre dışı', 'Durduruldu'); ekranda çevrilir."""
         tablo = self.tarama_listesi
         satir = self.oge_satiri
-        yuzde = self.oge_cubugu.value()
+        deger = self.oge_cubugu.value()
         self.oge_cubugu.hide()
         tablo.removeCellWidget(satir, SUTUN_CUBUK)
-        tablo.item(satir, SUTUN_CUBUK).setText(f'%{100 if durum == "Tamamlandı" else yuzde}')
+        tablo.item(satir, SUTUN_CUBUK).setText(yuzde(100 if durum == 'Tamamlandı' else deger))
         self.oge_suresini_goster()
-        tablo.item(satir, SUTUN_DURUM).setText(durum)
+        tablo.item(satir, SUTUN_DURUM).setText(_t(durum))
         if durum == 'Hata':
             tablo.item(satir, SUTUN_DURUM).setForeground(QColor('#c62828'))
         if not_:
@@ -910,14 +957,15 @@ class AnaPencere(QMainWindow):
         self.durum.setText(metin)
 
     def asamayi_guncelle(self, ad, toplam):
-        """toplam yalnızca bu aşamada gerçekten işlenecek video sayısıdır; -1 süresiz bekleme."""
-        self.asama_adi = ad
+        """ad işçinin anahtarıdır ('Altyazı oluşturuluyor' ...); ekranda çevrilir.
+        toplam yalnızca bu aşamada gerçekten işlenecek video sayısıdır; -1 süresiz bekleme."""
+        self.asama_adi = _t(ad)
         self.icerik_ilerleme = None
         self.tahmin_baslangici = None
         if toplam < 0:
             self.ilerleme_sayilari = None
             self.ilerleme.setRange(0, 0)
-            self.durum.setText(ad + '...')
+            self.durum.setText(self.asama_adi + '...')
         else:
             self.ilerlemeyi_guncelle(0, toplam)
 
@@ -933,20 +981,20 @@ class AnaPencere(QMainWindow):
         """Altyazı aşamasında çubuk ve kalan süre içerik süresine, diğer aşamalarda video adedine göredir."""
         if not self.ilerleme_sayilari:
             return
-        ad = getattr(self, 'asama_adi', 'İşleniyor')
+        ad = getattr(self, 'asama_adi', _t('İşleniyor'))
         mevcut, toplam = self.ilerleme_sayilari
         if not toplam:
             self.ilerleme.setRange(0, 1)
             self.ilerleme.setValue(1)
-            self.ilerleme.setFormat(f'{ad}: işlenecek video yok')
+            self.ilerleme.setFormat(_t('{ad}: işlenecek video yok', ad=ad))
             return
         icerik = self.icerik_ilerleme
         if icerik and icerik[1] > 0:
             deger, en_fazla = icerik
-            yuzde = f'%{deger * 100 / en_fazla:.1f}'.replace('.', ',')
             self.ilerleme.setRange(0, 10000)
             self.ilerleme.setValue(int(deger * 10000 / en_fazla))
-            self.ilerleme.setFormat(f'{ad}: {yuzde}  ({saat(round(deger * 1000))} / {saat(round(en_fazla * 1000))} içerik)')
+            self.ilerleme.setFormat(_t('{ad}: {yuzde}  ({biten} / {toplam} içerik)', ad=ad, yuzde=yuzde(deger * 100 / en_fazla, 1),
+                                       biten=saat(round(deger * 1000)), toplam=saat(round(en_fazla * 1000))))
         else:
             deger, en_fazla = mevcut, toplam
             self.ilerleme.setRange(0, toplam)
@@ -954,24 +1002,25 @@ class AnaPencere(QMainWindow):
             self.ilerleme.setFormat(f'{ad}: %v / %m  (%p%)')
         if self.tahmin_baslangici is None and deger > 0:
             self.tahmin_baslangici = (time.monotonic(), deger)
-        metin = f'{ad}: {mevcut} / {toplam} video'
+        metin = _t('{ad}: {mevcut} / {toplam} video', ad=ad, mevcut=mevcut, toplam=toplam)
         if self.tahmin_baslangici and deger < en_fazla:
             kalan = kalan_sure_tahmini(deger, en_fazla, self.tahmin_baslangici[1], time.monotonic() - self.tahmin_baslangici[0])
-            metin += (' • Tahmini kalan: hesaplanıyor...' if kalan is None
-                      else f' • Tahmini kalan: {sure_metni(kalan)} • Tahmini bitiş: {bitis_metni(kalan)}')
+            metin += (_t(' • Tahmini kalan: hesaplanıyor...') if kalan is None
+                      else _t(' • Tahmini kalan: {kalan} • Tahmini bitiş: {bitis}', kalan=sure_metni(kalan), bitis=bitis_metni(kalan)))
         self.durum.setText(metin)
 
     def durdur(self):
         if self.isci:
             self.isci.requestInterruption()
             self.durdur_dugmesi.setEnabled(False)
-            self.durum.setText('Durduruluyor; devam eden model yükleme / ses çözümleme adımı bekleniyor...')
+            self.durum.setText(_t('Durduruluyor; devam eden model yükleme / ses çözümleme adımı bekleniyor...'))
 
     def isci_bitti(self):
         uyanik_tut(False)
         if self.zamanli_calisma:
             self.zamanli_calisma = False
-            self.gunluk.appendPlainText(f'[{datetime.now():%H:%M}] Zamanlayıcı: otomatik tarama sona erdi. {self.durum.text()}')
+            self.gunluk.appendPlainText(_t('[{saat}] Zamanlayıcı: otomatik tarama sona erdi. {durum}',
+                                           saat=datetime.now().strftime('%H:%M'), durum=self.durum.text()))
             QTimer.singleShot(0, self.zamanlayici_tik)
         for bilesen in (self.sure_modu, self.sure_alt, self.sure_ust, self.bilgi_tamamla):
             bilesen.setEnabled(True)
@@ -990,15 +1039,15 @@ class AnaPencere(QMainWindow):
             self.liste_klasoru.klasorleri_ayarla(kokler)
             self.modelleri_yenile()
         except Exception as hata:
-            QMessageBox.warning(self, 'Klasör listesi', str(hata))
+            QMessageBox.warning(self, _t('Klasör listesi'), str(hata))
 
     def modelleri_yenile(self):
         gecerli = self.liste_modeli.currentData()
         self.liste_modeli.blockSignals(True)
         self.liste_modeli.clear()
-        self.liste_modeli.addItem('Tüm modeller', None)
+        self.liste_modeli.addItem(_t('Tüm modeller'), None)
         for model, dil, sayi in modelleri_listele(self.db):
-            self.liste_modeli.addItem(f'{model} / {dil}  ({sayi} video)', (model, dil))
+            self.liste_modeli.addItem(_t('{model} / {dil}  ({sayi} video)', model=model, dil=dil, sayi=sayi), (model, dil))
             if (model, dil) == gecerli:
                 self.liste_modeli.setCurrentIndex(self.liste_modeli.count() - 1)
         self.liste_modeli.blockSignals(False)
@@ -1025,7 +1074,7 @@ class AnaPencere(QMainWindow):
         for anahtar, satir in self.onizleme_satirlari.items():
             oge = self.tablo.item(satir, ONIZLEME_SUTUNU)
             if oge and oge.data(Qt.ItemDataRole.DecorationRole) is None:
-                oge.setText('Yükleniyor…')
+                oge.setText(_t('Yükleniyor…'))
                 bekleyen.append(anahtar)
         self.onizleme_yukleyici.iste(bekleyen)
         self.gorunen_onizlemeleri_one_al()
@@ -1045,7 +1094,7 @@ class AnaPencere(QMainWindow):
         if oge is None:
             return
         if goruntu.isNull():
-            oge.setText('Görüntü yok')
+            oge.setText(_t('Görüntü yok'))
             return
         oge.setText('')
         oge.setData(Qt.ItemDataRole.DecorationRole, QPixmap.fromImage(goruntu).scaled(
@@ -1071,7 +1120,7 @@ class AnaPencere(QMainWindow):
                 ilk = eslesenler[0]
                 onizleme = '\n'.join(f"{zaman_damgasi(s['start'])}  {s['text']}" for s in eslesenler[:15])
                 if len(eslesenler) > 15:
-                    onizleme += f'\n… {len(eslesenler) - 15} satır daha (Detay)'
+                    onizleme += '\n' + _t('… {sayi} satır daha (Detay)', sayi=len(eslesenler) - 15)
                 for j, (deger, ipucu) in enumerate([(yol, yol), (zaman_damgasi(ilk['start']), onizleme),
                                                     (str(len(eslesenler)), onizleme), (ilk['text'], onizleme)]):
                     oge = QTableWidgetItem(deger)
@@ -1080,17 +1129,18 @@ class AnaPencere(QMainWindow):
                     if j == 2:
                         oge.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     self.tablo.setItem(i, j, oge)
-                kucuk_resim = QTableWidgetItem('Yükleniyor…' if self.onizleme_goster.isChecked() else '')
+                kucuk_resim = QTableWidgetItem(_t('Yükleniyor…') if self.onizleme_goster.isChecked() else '')
                 kucuk_resim.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 kucuk_resim.setData(Qt.ItemDataRole.UserRole, ilk['start'])
                 self.tablo.setItem(i, ONIZLEME_SUTUNU, kucuk_resim)
             self.onizleme_satirlari = {(yol, eslesenler[0]['start']): i for i, (yol, eslesenler) in enumerate(gosterilen)}
             self.onizlemeleri_yukle()
             self.son_sorgu = (self.sorgu.text(), self.tam_kelime.isChecked())
-            not_ = ' İlk 1000 video gösteriliyor; aramanızı daraltın.' if len(videolar) > 1000 or len(satirlar) == 50000 else ''
-            self.sayi.setText(f'{len(videolar)} video ({len(satirlar)} eşleşen satır). Satırların tamamı için Detay.' + not_)
+            not_ = _t(' İlk 1000 video gösteriliyor; aramanızı daraltın.') if len(videolar) > 1000 or len(satirlar) == 50000 else ''
+            self.sayi.setText(_t('{videolar} video ({satirlar} eşleşen satır). Satırların tamamı için Detay.',
+                                 videolar=len(videolar), satirlar=len(satirlar)) + not_)
         except Exception as hata:
-            QMessageBox.warning(self, 'Arama hatası', str(hata))
+            QMessageBox.warning(self, _t('Arama hatası'), str(hata))
 
     def secili_yol(self):
         tablo = self.etkin_tablo()
@@ -1100,7 +1150,7 @@ class AnaPencere(QMainWindow):
     def detay_goster(self):
         yol = self.secili_yol()
         if not yol:
-            QMessageBox.information(self, 'Satır seçin', 'Önce listeden bir satır seçin.')
+            QMessageBox.information(self, _t('Satır seçin'), _t('Önce listeden bir satır seçin.'))
             return
         tablo = self.etkin_tablo()
         baslangic = tablo.item(tablo.currentRow(), 0).data(Qt.ItemDataRole.UserRole) or 0
@@ -1108,14 +1158,14 @@ class AnaPencere(QMainWindow):
         try:
             pencere = DetayPenceresi(self, yol, [tuple(s) for s in self.altyazi_satirlari(yol)], baslangic, sorgu, tam_kelime)
         except Exception as hata:
-            QMessageBox.warning(self, 'Detay açılamadı', str(hata))
+            QMessageBox.warning(self, _t('Detay açılamadı'), str(hata))
             return
         pencere.exec()
 
     def videoyu_ac(self):
         yol = self.secili_yol()
         if yol and not QDesktopServices.openUrl(QUrl.fromLocalFile(yol)):
-            QMessageBox.warning(self, 'Video açılamadı', 'Dosya yolunu ve varsayılan oynatıcınızı kontrol edin.')
+            QMessageBox.warning(self, _t('Video açılamadı'), _t('Dosya yolunu ve varsayılan oynatıcınızı kontrol edin.'))
 
     def klasoru_ac(self):
         yol = self.secili_yol()
@@ -1129,34 +1179,37 @@ class AnaPencere(QMainWindow):
     def srt_kaydet(self):
         yol = self.secili_yol()
         if not yol:
-            QMessageBox.information(self, 'Video seçin', 'Önce listeden bir video seçin.')
+            QMessageBox.information(self, _t('Video seçin'), _t('Önce listeden bir video seçin.'))
             return
-        hedef, _ = QFileDialog.getSaveFileName(self, 'SRT kaydet', str(Path(yol).with_suffix('.srt')), 'Altyazı (*.srt)')
+        hedef, _filtre = QFileDialog.getSaveFileName(self, _t('SRT kaydet'), str(Path(yol).with_suffix('.srt')),
+                                                     _t('Altyazı (*.srt)'))
         if hedef:
             try:
                 srt_aktar(self.altyazi_satirlari(yol), hedef)
             except Exception as hata:
-                QMessageBox.warning(self, 'Dışa aktarma hatası', str(hata))
+                QMessageBox.warning(self, _t('Dışa aktarma hatası'), str(hata))
 
     def tumunu_aktar(self):
-        klasor = QFileDialog.getExistingDirectory(self, 'SRT dosyalarının kaydedileceği klasör')
+        klasor = QFileDialog.getExistingDirectory(self, _t('SRT dosyalarının kaydedileceği klasör'))
         if not klasor:
             return
         try:
             kayitlar = self.db.execute("SELECT id,path FROM videos WHERE status='done'").fetchall()
             for kayit in kayitlar:
                 srt_aktar(self.altyazi_satirlari(kayit['path']), Path(klasor) / f"{Path(kayit['path']).stem}_{kayit['id']}.srt")
-            QMessageBox.information(self, 'Dışa aktarma', f'{len(kayitlar)} SRT dosyası kaydedildi.')
+            QMessageBox.information(self, _t('Dışa aktarma'), _t('{sayi} SRT dosyası kaydedildi.', sayi=len(kayitlar)))
         except Exception as hata:
-            QMessageBox.warning(self, 'Dışa aktarma hatası', str(hata))
+            QMessageBox.warning(self, _t('Dışa aktarma hatası'), str(hata))
 
     def closeEvent(self, olay):
         if not self.klasorleri_kaydet():
             olay.ignore()
             return
         if self.isci and self.isci.isRunning():
+            self.yeniden_baslat = False
             self.durdur()
-            QMessageBox.information(self, 'İşlem durduruluyor', 'İşlem durduktan sonra pencereyi kapatabilirsiniz. Tamamlanan videolar kaydedilmiştir.')
+            QMessageBox.information(self, _t('İşlem durduruluyor'),
+                                    _t('İşlem durduktan sonra pencereyi kapatabilirsiniz. Tamamlanan videolar kaydedilmiştir.'))
             olay.ignore()
             return
         self.onizleme_yukleyici.durdur()

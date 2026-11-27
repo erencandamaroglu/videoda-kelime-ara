@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QDialog, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QProgressBar,
                              QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
+from .ceviri import _t
 from .detay_penceresi import okunur_boyut, saat
 from .isci import UZANTILAR, BagIscisi
 from .veritabani import videolari_sil, yolu_guncelle
@@ -22,7 +23,7 @@ class KopukBagPenceresi(QDialog):
         super().__init__(ust)
         self.db, self.klasorler = db, klasorler
         self.satirlar, self.isci = [], None
-        self.setWindowTitle('Kopuk bağlar')
+        self.setWindowTitle(_t('Kopuk bağlar'))
         self.resize(1100, 620)
         duzen = QVBoxLayout(self)
         self.bilgi = QLabel('')
@@ -31,7 +32,7 @@ class KopukBagPenceresi(QDialog):
         self.ilerleme = QProgressBar()
         duzen.addWidget(self.ilerleme)
         self.tablo = QTableWidget(0, len(SUTUNLAR))
-        self.tablo.setHorizontalHeaderLabels(SUTUNLAR)
+        self.tablo.setHorizontalHeaderLabels([_t(s) for s in SUTUNLAR])
         self.tablo.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tablo.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.tablo.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -46,16 +47,16 @@ class KopukBagPenceresi(QDialog):
         self.eylemler = []
         for etiket, islev in [('Önerileri uygula', self.onerileri_uygula), ('Dosyayı elle seç…', self.dosya_sec),
                               ('Başka klasörde ara…', self.klasorde_ara), ('Kayıttan kaldır', self.kaldir)]:
-            dugme = QPushButton(etiket)
+            dugme = QPushButton(_t(etiket))
             dugme.clicked.connect(islev)
             dugmeler.addWidget(dugme)
             self.eylemler.append(dugme)
-        kapat = QPushButton('Kapat')
+        kapat = QPushButton(_t('Kapat'))
         kapat.clicked.connect(self.reject)
         dugmeler.addWidget(kapat)
         duzen.addLayout(dugmeler)
-        duzen.addWidget(QLabel('Ctrl / Shift ile birden çok satır, Ctrl+A ile tümü seçilir. Yeşil öneriler kesin eşleşmedir; '
-                               'kaldırmak altyazıyı da siler, video dosyasına dokunmaz.'))
+        duzen.addWidget(QLabel(_t('Ctrl / Shift ile birden çok satır, Ctrl+A ile tümü seçilir. Yeşil öneriler kesin eşleşmedir; '
+                                  'kaldırmak altyazıyı da siler, video dosyasına dokunmaz.')))
         self.isciyi_baslat()
 
     def isciyi_baslat(self, kayiplar=None, kokler=None):
@@ -66,7 +67,7 @@ class KopukBagPenceresi(QDialog):
         self.isci.asama.connect(self.bilgi.setText)
         self.isci.ilerleme.connect(self.ilerlemeyi_guncelle)
         self.isci.bulundu.connect(self.birlestir)
-        self.isci.hata.connect(lambda metin: QMessageBox.warning(self, 'Kopuk bağlar', metin))
+        self.isci.hata.connect(lambda metin: QMessageBox.warning(self, _t('Kopuk bağlar'), metin))
         self.isci.finished.connect(self.isci_bitti)
         self.isci.start()
 
@@ -107,8 +108,8 @@ class KopukBagPenceresi(QDialog):
         self.tablo.setUpdatesEnabled(True)
         onerili = sum(1 for s in self.satirlar if s.get('yeni_yol'))
         if self.isci is None or not self.isci.isRunning():
-            self.bilgi.setText(f'{len(self.satirlar)} kopuk kayıt, {onerili} tanesi için öneri var.' if self.satirlar
-                               else 'Kopuk kayıt yok; tüm kayıtların dosyası yerinde.')
+            self.bilgi.setText(_t('{sayi} kopuk kayıt, {onerili} tanesi için öneri var.', sayi=len(self.satirlar), onerili=onerili)
+                               if self.satirlar else _t('Kopuk kayıt yok; tüm kayıtların dosyası yerinde.'))
 
     def secili_satirlar(self):
         return [self.satirlar[indeks.row()] for indeks in self.tablo.selectionModel().selectedRows()]
@@ -124,11 +125,12 @@ class KopukBagPenceresi(QDialog):
     def onerileri_uygula(self):
         satirlar = [s for s in self.secili_satirlar() if s.get('yeni_yol')]
         if not satirlar:
-            QMessageBox.information(self, 'Önerileri uygula', 'Önerisi olan satırları seçin.')
+            QMessageBox.information(self, _t('Önerileri uygula'), _t('Önerisi olan satırları seçin.'))
             return
         kesin_olmayan = sum(1 for s in satirlar if not s['kesin'])
-        if kesin_olmayan and QMessageBox.question(self, 'Önerileri uygula',
-                f'{len(satirlar)} önerinin {kesin_olmayan} tanesi kesin değil; altyazı başka bir videoya bağlanabilir. Uygulansın mı?') \
+        if kesin_olmayan and QMessageBox.question(self, _t('Önerileri uygula'), _t(
+                '{sayi} önerinin {kesin_olmayan} tanesi kesin değil; altyazı başka bir videoya bağlanabilir. Uygulansın mı?',
+                sayi=len(satirlar), kesin_olmayan=kesin_olmayan)) \
                 != QMessageBox.StandardButton.Yes:
             return
         yapilan, hatalar = [], []
@@ -137,53 +139,56 @@ class KopukBagPenceresi(QDialog):
                 self.yeniden_bagla(satir, satir['yeni_yol'])
                 yapilan.append(satir)
             except sqlite3.IntegrityError:
-                hatalar.append(f'{satir["yeni_yol"]}: bu dosyanın zaten ayrı bir kaydı var.')
+                hatalar.append(satir['yeni_yol'] + ': ' + _t('bu dosyanın zaten ayrı bir kaydı var.'))
             except OSError as hata:
                 hatalar.append(f'{satir["yeni_yol"]}: {hata}')
         self.listeden_cikar(yapilan)
         if hatalar:
-            QMessageBox.warning(self, 'Önerileri uygula', f'{len(yapilan)} bağ düzeltildi. Düzeltilemeyenler:\n' + '\n'.join(hatalar[:20]))
+            QMessageBox.warning(self, _t('Önerileri uygula'), _t('{sayi} bağ düzeltildi. Düzeltilemeyenler:', sayi=len(yapilan))
+                                + '\n' + '\n'.join(hatalar[:20]))
 
     def dosya_sec(self):
         satirlar = self.secili_satirlar()
         if len(satirlar) != 1:
-            QMessageBox.information(self, 'Dosyayı elle seç', 'Tek bir satır seçin.')
+            QMessageBox.information(self, _t('Dosyayı elle seç'), _t('Tek bir satır seçin.'))
             return
         satir = satirlar[0]
         baslangic = Path(satir['path']).parent
         while not baslangic.is_dir() and baslangic != baslangic.parent:
             baslangic = baslangic.parent
         desenler = ' '.join(f'*{uzanti}' for uzanti in sorted(UZANTILAR))
-        yol, _ = QFileDialog.getOpenFileName(self, 'Videonun yeni yeri', str(baslangic), f'Video ({desenler})')
+        yol, _filtre = QFileDialog.getOpenFileName(self, _t('Videonun yeni yeri'), str(baslangic), f'Video ({desenler})')
         if not yol:
             return
         yol = os.path.normpath(yol)
         try:
-            if os.stat(yol).st_size != satir['size'] and QMessageBox.question(self, 'Dosyayı elle seç',
-                    'Seçilen dosyanın boyutu kayıttakinden farklı; farklı bir video olabilir. Altyazı yine de buna bağlansın mı?') \
+            if os.stat(yol).st_size != satir['size'] and QMessageBox.question(self, _t('Dosyayı elle seç'), _t(
+                    'Seçilen dosyanın boyutu kayıttakinden farklı; farklı bir video olabilir. Altyazı yine de buna bağlansın mı?')) \
                     != QMessageBox.StandardButton.Yes:
                 return
             self.yeniden_bagla(satir, yol)
             self.listeden_cikar([satir])
         except sqlite3.IntegrityError:
-            QMessageBox.warning(self, 'Dosyayı elle seç', 'Bu dosyanın zaten ayrı bir kaydı var. Eski kaydı isterseniz kaldırabilirsiniz.')
+            QMessageBox.warning(self, _t('Dosyayı elle seç'),
+                                _t('Bu dosyanın zaten ayrı bir kaydı var. Eski kaydı isterseniz kaldırabilirsiniz.'))
         except OSError as hata:
-            QMessageBox.warning(self, 'Dosyayı elle seç', str(hata))
+            QMessageBox.warning(self, _t('Dosyayı elle seç'), str(hata))
 
     def klasorde_ara(self):
         if not self.satirlar:
             return
-        klasor = QFileDialog.getExistingDirectory(self, 'Kopuk videoların aranacağı klasör')
+        klasor = QFileDialog.getExistingDirectory(self, _t('Kopuk videoların aranacağı klasör'))
         if klasor:
             self.isciyi_baslat(self.satirlar, [os.path.normpath(klasor)])
 
     def kaldir(self):
         satirlar = self.secili_satirlar()
         if not satirlar:
-            QMessageBox.information(self, 'Kayıttan kaldır', 'Önce satır seçin.')
+            QMessageBox.information(self, _t('Kayıttan kaldır'), _t('Önce satır seçin.'))
             return
-        if QMessageBox.question(self, 'Kayıttan kaldır',
-                f'{len(satirlar)} videonun kaydı ve altyazısı veritabanından silinecek. Bu işlem geri alınamaz. Devam edilsin mi?') \
+        if QMessageBox.question(self, _t('Kayıttan kaldır'), _t(
+                '{sayi} videonun kaydı ve altyazısı veritabanından silinecek. Bu işlem geri alınamaz. Devam edilsin mi?',
+                sayi=len(satirlar))) \
                 != QMessageBox.StandardButton.Yes:
             return
         videolari_sil(self.db, [s['id'] for s in satirlar])

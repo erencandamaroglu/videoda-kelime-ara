@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from .ceviri import _t
 from .yollar import MODEL_KLASORU
 
 
@@ -29,16 +30,16 @@ def gpu_durumu():
         import ctranslate2
         sayi = ctranslate2.get_cuda_device_count()
     except Exception as hata:
-        return False, f'GPU kontrol edilemedi: {hata}'
+        return False, _t('GPU kontrol edilemedi: {hata}', hata=hata)
     if not sayi:
-        return False, 'NVIDIA GPU bulunamadı; CPU kullanılır.'
+        return False, _t('NVIDIA GPU bulunamadı; CPU kullanılır.')
     if os.name == 'nt':
         try:
             # winmode=0: CTranslate2 gibi PATH'te de arar (ctypes varsayılanı aramaz).
             ctypes.WinDLL('cublas64_12.dll', winmode=0)
         except OSError:
-            return False, 'NVIDIA GPU var ama CUDA 12 kütüphanesi (cublas64_12.dll) bulunamadı; CPU kullanılır.'
-    return True, f'{sayi} NVIDIA GPU kullanıma hazır.'
+            return False, _t('NVIDIA GPU var ama CUDA 12 kütüphanesi (cublas64_12.dll) bulunamadı; CPU kullanılır.')
+    return True, _t('{sayi} NVIDIA GPU kullanıma hazır.', sayi=sayi)
 
 
 def model_yukle(ad, birim, gunluk):
@@ -53,11 +54,11 @@ def model_yukle(ad, birim, gunluk):
                 model = WhisperModel(ad, device='cuda', compute_type='float16', download_root=klasor)
                 # Eksik CUDA kütüphanesi hatası model yüklenirken değil, ilk çalıştırmada çıkar.
                 list(model.transcribe(np.zeros(16000, dtype=np.float32), language='en', beam_size=1, vad_filter=False)[0])
-                gunluk(f'İşlem birimi: GPU (NVIDIA CUDA). {not_}')
+                gunluk(_t('İşlem birimi: GPU (NVIDIA CUDA). {not_}', not_=not_))
                 return model
             except Exception as hata:
-                gunluk(f'GPU başlatılamadı, CPU ile devam ediliyor: {hata}')
+                gunluk(_t('GPU başlatılamadı, CPU ile devam ediliyor: {hata}', hata=hata))
         else:
             gunluk(not_)
-    gunluk('İşlem birimi: CPU.')
+    gunluk(_t('İşlem birimi: CPU.'))
     return WhisperModel(ad, device='cpu', compute_type='int8', download_root=klasor)
