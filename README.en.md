@@ -4,6 +4,16 @@
 
 Creates subtitles from the speech in your video folders (faster-whisper), stores them in SQLite and lets you search words across the whole archive. The interface is available in Turkish and English (Settings → Interface language).
 
+## Screenshots
+
+| Folder scan | Word search |
+|---|---|
+| ![Folder scan](docs/ekran/en_tarama.png) | ![Word search](docs/ekran/en_arama.png) |
+| **Video list** | **Settings and scheduler** |
+| ![Video list](docs/ekran/en_liste.png) | ![Settings](docs/ekran/en_ayarlar.png) |
+
+Screenshots use sample data (`tools/ekran_goruntusu.py`).
+
 ## Installation and running (Windows)
 
 - **First install:** `kurulum.bat` — creates the Python virtual environment in `.venv` inside the project folder; if an NVIDIA card is present it also installs the GPU libraries (`requirements-gpu.txt`).

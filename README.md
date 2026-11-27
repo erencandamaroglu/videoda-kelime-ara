@@ -4,6 +4,16 @@ Türkçe | [English](README.en.md)
 
 Klasörlerdeki videoların konuşmasından altyazı çıkarır (faster-whisper), SQLite'a kaydeder ve tüm arşivde kelime araması yapar. Arayüz Türkçe ve İngilizce kullanılabilir (Ayarlar → Arayüz dili; değişince program yeniden açılır, ilk açılışta Windows diline göre seçilir).
 
+## Ekran görüntüleri
+
+| Klasör tarama | Kelime arama |
+|---|---|
+| ![Klasör tarama](docs/ekran/tr_tarama.png) | ![Kelime arama](docs/ekran/tr_arama.png) |
+| **Video listesi** | **Ayarlar ve zamanlayıcı** |
+| ![Video listesi](docs/ekran/tr_liste.png) | ![Ayarlar](docs/ekran/tr_ayarlar.png) |
+
+Görüntüler örnek verilerle alınmıştır (`tools/ekran_goruntusu.py`).
+
 ## Kurulum ve çalıştırma
 
 - **İlk kurulum:** `kurulum.bat` — Python sanal ortamını proje klasöründe `.venv` içine kurar; NVIDIA kart varsa GPU kütüphanelerini (`requirements-gpu.txt`) de ekler. Başka bilgisayarda bozuk `.venv` algılanıp yeniden kurulur.
